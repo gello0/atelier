@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.WbSunny
@@ -33,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,6 +66,8 @@ fun SignInScreen(
     val credentialManager = remember(context) { CredentialManager.create(context) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showApiKeys by remember { mutableStateOf(false) }
+    if (showApiKeys) ApiKeysDialog(onDismiss = { showApiKeys = false })
 
     LaunchedEffect(Unit) {
         attemptAutoSignIn(
@@ -137,12 +141,12 @@ fun SignInScreen(
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = "Your Weather-Intelligent Digital Wardrobe",
+                    text = "Your closet, sorted",
                     style = MaterialTheme.typography.displayMedium,
                     textAlign = TextAlign.Center
                 )
                 Text(
-                    text = "Catalog your entire closet with AI photo tagging, pair live local forecasts with bespoke outfit curation, and mix-and-match looks in the cloud.",
+                    text = "Your wardrobe, with outfit ideas for today's weather.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -163,19 +167,19 @@ fun SignInScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     FeatureHighlightRow(
-                        icon = Icons.Default.AutoAwesome,
-                        title = "AI Garment Photo Auto-Tagger",
-                        subtitle = "Snap or pick any clothing photo — Gemini automatically detects category, warmth, color & rain resistance."
+                        icon = Icons.Default.PhotoCamera,
+                        title = "Snap your clothes",
+                        subtitle = "Take or pick a photo. The background is removed and the details are filled in for you."
                     )
                     FeatureHighlightRow(
                         icon = Icons.Default.WbSunny,
-                        title = "Live Weather Outfit Stylist",
-                        subtitle = "Real-time temperature, wind chill & rain risk matched directly to the clothes you actually own."
+                        title = "Dress for the weather",
+                        subtitle = "Outfit ideas from the clothes you own, matched to temperature, wind and rain."
                     )
                     FeatureHighlightRow(
                         icon = Icons.Default.CloudSync,
-                        title = "Cloud Sync & Wear Calendar",
-                        subtitle = "Your digital closet, mix-and-match studio looks, and wear history stay synced across devices."
+                        title = "Plan and track",
+                        subtitle = "Build looks, log what you wore, and sync across devices."
                     )
                 }
             }
@@ -233,7 +237,7 @@ fun SignInScreen(
                         strokeWidth = 2.5.dp
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text("Connecting to Google...")
+                    Text("Signing in…")
                 } else {
                     Text(
                         text = "Sign in with Google",
@@ -241,6 +245,10 @@ fun SignInScreen(
                         fontWeight = FontWeight.Bold
                     )
                 }
+            }
+
+            TextButton(onClick = { showApiKeys = true }, modifier = Modifier.testTag("sign_in_api_keys_button")) {
+                Text("API keys & Firebase setup")
             }
         }
     }

@@ -386,21 +386,162 @@ object ImageUtils {
      */
     fun encodeBitmapToBase64(bitmap: Bitmap, maxDim: Int = 400, quality: Int = 85): String {
         return try {
-            val safe = scaleDownBitmap(bitmap, maxDim)
-            val out = ByteArrayOutputStream()
-            safe.compress(Bitmap.CompressFormat.JPEG, quality, out)
-            val base64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
-            if (base64.length <= 112_000) {
-                return base64
+            val opaque = flattenOnWhite(bitmap)
+            var dim = maxDim
+            var q = quality
+            while (dim >= 160) {
+                val out = ByteArrayOutputStream()
+                scaleDownBitmap(opaque, dim).compress(Bitmap.CompressFormat.JPEG, q, out)
+                val base64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+                if (base64.length <= MAX_IMAGE_CHARS) return base64
+                if (q > 70) q -= 10 else dim = (dim * 0.8f).toInt()
             }
-            // Scale slightly if high-detail image exceeds 112KB
-            val compact = scaleDownBitmap(bitmap, 300)
-            val compactOut = ByteArrayOutputStream()
-            compact.compress(Bitmap.CompressFormat.JPEG, 78, compactOut)
-            Base64.encodeToString(compactOut.toByteArray(), Base64.NO_WRAP)
+            ""
         } catch (e: Exception) {
             ""
         }
+    }
+
+    /** Max base64 length for a stored photo (Firestore rules allow 120000). */
+    const val MAX_IMAGE_CHARS = 115_000
+
+    /** True when the stored photo is a transparent cutout (WebP/PNG) rather than a raw JPEG. */
+    fun isCutoutImage(base64Str: String): Boolean =
+        base64Str.startsWith("UklGR") || base64Str.startsWith("iVBOR")
+
+    /** Draws a bitmap with transparency onto white (models and JPEG need an opaque image). */
+    fun flattenOnWhite(source: Bitmap): Bitmap {
+        if (!source.hasAlpha()) return source
+        val out = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawColor(AndroidColor.WHITE)
+        canvas.drawBitmap(source, 0f, 0f, null)
+        return out
+    }
+
+    /**
+     * Crops a transparent cutout to its visible content and centres it in a square canvas with
+     * even padding, so every closet tile lines up like a product grid.
+     */
+    fun trimToContentSquare(source: Bitmap, outSize: Int = 640, paddingFraction: Float = 0.06f): Bitmap {
+        val bmp = ensureSoftwareArgbBitmap(source)
+        val w = bmp.width
+        val h = bmp.height
+        val pixels = IntArray(w * h)
+        bmp.getPixels(pixels, 0, w, 0, 0, w, h)
+        var minX = w
+        var minY = h
+        var maxX = -1
+        var maxY = -1
+        for (y in 0 until h) {
+            val row = y * w
+            for (x in 0 until w) {
+                if ((pixels[row + x] ushr 24) > 24) {
+                    if (x < minX) minX = x
+                    if (x > maxX) maxX = x
+                    if (y < minY) minY = y
+                    if (y > maxY) maxY = y
+                }
+            }
+        }
+        if (maxX < minX || maxY < minY) return bmp
+        val contentW = maxX - minX + 1
+        val contentH = maxY - minY + 1
+        val inner = outSize * (1f - 2f * paddingFraction)
+        val scale = min(inner / contentW, inner / contentH)
+        val drawW = contentW * scale
+        val drawH = contentH * scale
+        val left = (outSize - drawW) / 2f
+        val top = (outSize - drawH) / 2f
+        val out = Bitmap.createBitmap(outSize, outSize, Bitmap.Config.ARGB_8888)
+        Canvas(out).drawBitmap(
+            bmp,
+            Rect(minX, minY, maxX + 1, maxY + 1),
+            RectF(left, top, left + drawW, top + drawH),
+            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        )
+        return out
+    }
+
+    /**
+     * Makes a plain studio background transparent by flood-filling from the edges with the
+     * colour found in the corners, with a soft edge. Used on AI product renders when on-device
+     * segmentation is unavailable.
+     */
+    fun plainBackgroundToAlpha(source: Bitmap, tolerance: Int = 30): Bitmap {
+        val bmp = ensureSoftwareArgbBitmap(source).copy(Bitmap.Config.ARGB_8888, true)
+        val w = bmp.width
+        val h = bmp.height
+        val px = IntArray(w * h)
+        bmp.getPixels(px, 0, w, 0, 0, w, h)
+        val corners = intArrayOf(px[0], px[w - 1], px[(h - 1) * w], px[h * w - 1])
+        val br = corners.map { (it shr 16) and 0xFF }.average().toInt()
+        val bgG = corners.map { (it shr 8) and 0xFF }.average().toInt()
+        val bb = corners.map { it and 0xFF }.average().toInt()
+        val tolSq = tolerance * tolerance * 3
+        fun isBg(c: Int): Boolean {
+            val dr = ((c shr 16) and 0xFF) - br
+            val dg = ((c shr 8) and 0xFF) - bgG
+            val db = (c and 0xFF) - bb
+            return dr * dr + dg * dg + db * db <= tolSq
+        }
+        val bg = BooleanArray(w * h)
+        val queue = IntArray(w * h)
+        var head = 0
+        var tail = 0
+        fun seed(i: Int) {
+            if (!bg[i] && isBg(px[i])) {
+                bg[i] = true
+                queue[tail++] = i
+            }
+        }
+        for (x in 0 until w) { seed(x); seed((h - 1) * w + x) }
+        for (y in 0 until h) { seed(y * w); seed(y * w + w - 1) }
+        while (head < tail) {
+            val i = queue[head++]
+            val x = i % w
+            val y = i / w
+            if (x > 0) seed(i - 1)
+            if (x < w - 1) seed(i + 1)
+            if (y > 0) seed(i - w)
+            if (y < h - 1) seed(i + w)
+        }
+        // Fully clear background, half-fade pixels that touch it for a softer edge.
+        for (i in 0 until w * h) {
+            if (bg[i]) {
+                px[i] = 0
+            } else {
+                val x = i % w
+                val y = i / w
+                val touches = (x > 0 && bg[i - 1]) || (x < w - 1 && bg[i + 1]) ||
+                    (y > 0 && bg[i - w]) || (y < h - 1 && bg[i + w])
+                if (touches) px[i] = (px[i] and 0x00FFFFFF) or (0x99 shl 24)
+            }
+        }
+        bmp.setPixels(px, 0, w, 0, 0, w, h)
+        return bmp
+    }
+
+    /** Encodes a transparent cutout as WebP, shrinking until it fits the Firestore budget. */
+    fun encodeCutoutToBase64(bitmap: Bitmap): String {
+        val sizes = intArrayOf(640, 560, 480, 400, 320)
+        val qualities = intArrayOf(85, 75, 65)
+        @Suppress("DEPRECATION")
+        val format = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            Bitmap.CompressFormat.WEBP_LOSSY
+        } else {
+            Bitmap.CompressFormat.WEBP
+        }
+        for (size in sizes) {
+            val scaled = scaleDownBitmap(bitmap, size)
+            for (q in qualities) {
+                val out = ByteArrayOutputStream()
+                scaled.compress(format, q, out)
+                val b64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+                if (b64.length <= MAX_IMAGE_CHARS) return b64
+            }
+        }
+        return ""
     }
 
     fun decodeUriToScaledBitmap(context: Context, uri: Uri, maxDim: Int = 640): Bitmap? {

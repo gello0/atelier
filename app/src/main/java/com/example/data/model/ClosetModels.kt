@@ -61,6 +61,7 @@ data class ClosetItem(
             materialComposition.contains("Pending", ignoreCase = true) ||
             materialComposition.contains("Analyzing", ignoreCase = true) ||
             name.startsWith("Uploaded ", ignoreCase = true) ||
+            name.equals("New piece", ignoreCase = true) ||
             name.startsWith("Scanning ", ignoreCase = true)
     }
 

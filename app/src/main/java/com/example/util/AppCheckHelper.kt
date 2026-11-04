@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.example.BuildConfig
+import com.example.data.settings.AppSettings
 import com.google.firebase.FirebaseApp
 import com.google.firebase.appcheck.FirebaseAppCheck
 import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
@@ -18,9 +19,10 @@ private const val RECAPTCHA_SITE_KEY_RES = "recaptcha_site_key"
 
 fun configureAppCheck(context: Context, intent: Intent?) {
     try {
-        if (FirebaseApp.getApps(context).isEmpty()) {
-            FirebaseApp.initializeApp(context)
-        }
+        // Firebase is started in AtelierApp. App Check is only set up for the bundled AI Studio
+        // project; a project entered in Settings uses its own App Check settings (if any).
+        if (FirebaseApp.getApps(context).isEmpty()) return
+        if (AppSettings.get(context).usesCustomFirebase()) return
 
         if (BuildConfig.DEBUG) {
             val debugToken = intent?.getStringExtra(DEBUG_TOKEN_EXTRA)

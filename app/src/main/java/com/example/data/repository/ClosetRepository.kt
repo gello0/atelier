@@ -1,7 +1,7 @@
 package com.example.data.repository
 
 import android.content.Context
-import com.example.R
+import com.example.data.settings.AppSettings
 import com.example.data.model.ClosetItem
 import com.example.data.model.GarmentCategory
 import com.example.data.model.Outfit
@@ -23,11 +23,15 @@ import java.time.LocalDate
 
 class ClosetRepository(private val db: FirebaseFirestore) {
 
-    constructor(context: Context) : this(
-        FirebaseFirestore.getInstance(
-            context.applicationContext.getString(R.string.firestore_database_id)
-        )
-    )
+    constructor(context: Context) : this(firestoreFor(context))
+
+    companion object {
+        /** Firestore for the database id in Settings (or the bundled one). */
+        fun firestoreFor(context: Context): FirebaseFirestore {
+            val dbId = AppSettings.get(context).effectiveFirestoreDatabaseId()
+            return if (dbId == "(default)") FirebaseFirestore.getInstance() else FirebaseFirestore.getInstance(dbId)
+        }
+    }
 
     private val auth get() = Firebase.auth
 
@@ -128,7 +132,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
             "occasions" to item.occasions.take(10),
             "seasons" to item.seasons.take(6),
             "notes" to item.notes.trim().take(500),
-            "imageBase64" to item.imageBase64.take(120000),
+            "imageBase64" to checkedImage(item.imageBase64),
             "wearCount" to item.wearCount.coerceAtLeast(0L),
             "lastWornEpochDay" to item.lastWornEpochDay.coerceAtLeast(0L),
             "isFavorite" to item.isFavorite,
@@ -163,7 +167,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
             "occasions" to item.occasions.take(10),
             "seasons" to item.seasons.take(6),
             "notes" to item.notes.trim().take(500),
-            "imageBase64" to item.imageBase64.take(120000),
+            "imageBase64" to checkedImage(item.imageBase64),
             "wearCount" to item.wearCount.coerceAtLeast(0L),
             "lastWornEpochDay" to item.lastWornEpochDay.coerceAtLeast(0L),
             "isFavorite" to item.isFavorite,
@@ -271,6 +275,10 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         }
     }
 
+    /**
+     * Logs a worn outfit and bumps wear counts in ONE atomic batch, so the log and the counts
+     * can't drift apart. [itemIds] must be items that still exist.
+     */
     suspend fun logOutfitWear(
         dateIso: String,
         outfitId: String,
@@ -279,77 +287,161 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         occasion: String,
         weatherTempC: Double,
         weatherCondition: String,
-        notes: String = ""
+        notes: String = "",
+        outfitExists: Boolean = outfitId.isNotBlank()
     ): Result<String> = runCatching {
         val uid = requireUserId()
-        require(itemIds.isNotEmpty()) { "Wear log must include at least one item" }
-        val colRef = db.collection("users").document(uid).collection("wearLogs")
-        val docRef = colRef.document()
-        val payload = mapOf(
-            "userId" to uid,
-            "dateIso" to dateIso.trim().take(10),
-            "outfitId" to outfitId.trim().take(128),
-            "outfitName" to outfitName.trim().take(100).ifBlank { "Daily Look" },
-            "itemIds" to itemIds.take(12),
-            "occasion" to occasion.trim().take(60).ifBlank { "Casual" },
-            "weatherTempC" to weatherTempC.coerceIn(-80.0, 70.0),
-            "weatherCondition" to weatherCondition.trim().take(80),
-            "notes" to notes.trim().take(400),
-            "createdAt" to FieldValue.serverTimestamp(),
-            "updatedAt" to FieldValue.serverTimestamp()
+        val ids = itemIds.distinct().take(12)
+        require(ids.isNotEmpty()) { "Wear log must include at least one item" }
+        val userRef = db.collection("users").document(uid)
+        val docRef = userRef.collection("wearLogs").document()
+        val epochDay = try {
+            LocalDate.parse(dateIso).toEpochDay()
+        } catch (e: Exception) {
+            LocalDate.now().toEpochDay()
+        }
+        val batch = db.batch()
+        batch.set(
+            docRef,
+            mapOf(
+                "userId" to uid,
+                "dateIso" to dateIso.trim().take(10),
+                "outfitId" to outfitId.trim().take(128),
+                "outfitName" to outfitName.trim().take(100).ifBlank { "Daily Look" },
+                "itemIds" to ids,
+                "occasion" to occasion.trim().take(60).ifBlank { "Casual" },
+                "weatherTempC" to weatherTempC.coerceIn(-80.0, 70.0),
+                "weatherCondition" to weatherCondition.trim().take(80),
+                "notes" to notes.trim().take(400),
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
         )
+        for (itemId in ids) {
+            batch.update(
+                userRef.collection("closetItems").document(itemId),
+                mapOf(
+                    "wearCount" to FieldValue.increment(1L),
+                    "lastWornEpochDay" to epochDay,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+        }
+        if (outfitId.isNotBlank() && outfitExists) {
+            batch.update(
+                userRef.collection("outfits").document(outfitId),
+                mapOf("wearCount" to FieldValue.increment(1L), "updatedAt" to FieldValue.serverTimestamp())
+            )
+        }
         try {
-            docRef.set(payload).await()
-            val epochDay = try {
-                LocalDate.parse(dateIso).toEpochDay()
-            } catch (e: Exception) {
-                LocalDate.now().toEpochDay()
-            }
-            for (itemId in itemIds.take(12)) {
-                val itemRef = db.collection("users").document(uid).collection("closetItems").document(itemId)
-                try {
-                    itemRef.update(
-                        mapOf(
-                            "wearCount" to FieldValue.increment(1L),
-                            "lastWornEpochDay" to epochDay,
-                            "updatedAt" to FieldValue.serverTimestamp()
-                        )
-                    ).await()
-                } catch (ignored: Exception) {
-                }
-            }
-            if (outfitId.isNotBlank()) {
-                val outfitRef = db.collection("users").document(uid).collection("outfits").document(outfitId)
-                try {
-                    outfitRef.update(
-                        mapOf(
-                            "wearCount" to FieldValue.increment(1L),
-                            "updatedAt" to FieldValue.serverTimestamp()
-                        )
-                    ).await()
-                } catch (ignored: Exception) {
-                }
-            }
+            batch.commit().await()
             docRef.id
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.CREATE, docRef.path)
+            handleFirestoreError(e, OperationType.WRITE, docRef.path)
             throw e
         }
     }
 
-    suspend fun deleteWearLog(logId: String): Result<Unit> = runCatching {
+    /**
+     * Deletes a wear log and rolls the counts back. [itemUpdates] maps each still-existing item to
+     * its corrected (wearCount, lastWornEpochDay); [outfitWearCount] is the outfit's corrected count.
+     */
+    suspend fun deleteWearLog(
+        logId: String,
+        itemUpdates: Map<String, Pair<Long, Long>> = emptyMap(),
+        outfitId: String = "",
+        outfitWearCount: Long? = null
+    ): Result<Unit> = runCatching {
         val uid = requireUserId()
-        val docRef = db.collection("users").document(uid).collection("wearLogs").document(logId)
+        val userRef = db.collection("users").document(uid)
+        val docRef = userRef.collection("wearLogs").document(logId)
+        val batch = db.batch()
+        batch.delete(docRef)
+        for ((itemId, counts) in itemUpdates) {
+            batch.update(
+                userRef.collection("closetItems").document(itemId),
+                mapOf(
+                    "wearCount" to counts.first.coerceAtLeast(0L),
+                    "lastWornEpochDay" to counts.second.coerceAtLeast(0L),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+        }
+        if (outfitId.isNotBlank() && outfitWearCount != null) {
+            batch.update(
+                userRef.collection("outfits").document(outfitId),
+                mapOf("wearCount" to outfitWearCount.coerceAtLeast(0L), "updatedAt" to FieldValue.serverTimestamp())
+            )
+        }
         try {
-            docRef.delete().await()
+            batch.commit().await()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.DELETE, docRef.path)
             throw e
         }
+    }
+
+    /**
+     * Deletes closet items and fixes the outfits that used them: the items are removed from each
+     * outfit, and outfits left empty are deleted. Wear history is kept.
+     */
+    suspend fun deleteClosetItems(itemIds: Collection<String>, outfits: List<Outfit>): Result<Unit> = runCatching {
+        val uid = requireUserId()
+        val userRef = db.collection("users").document(uid)
+        val removing = itemIds.toSet()
+        val ops = mutableListOf<(com.google.firebase.firestore.WriteBatch) -> Unit>()
+        removing.forEach { id -> ops.add { b -> b.delete(userRef.collection("closetItems").document(id)) } }
+        outfits.filter { o -> o.itemIds.any { it in removing } }.forEach { o ->
+            val remaining = o.itemIds.filterNot { it in removing }
+            val ref = userRef.collection("outfits").document(o.id)
+            if (remaining.isEmpty()) {
+                ops.add { b -> b.delete(ref) }
+            } else {
+                ops.add { b -> b.update(ref, mapOf("itemIds" to remaining, "updatedAt" to FieldValue.serverTimestamp())) }
+            }
+        }
+        commitInChunks(ops, "users/$uid/closetItems")
+    }
+
+    /** Deletes every closet item, outfit and wear log for the signed-in user. */
+    suspend fun deleteAllUserData(): Result<Int> = runCatching {
+        val uid = requireUserId()
+        val userRef = db.collection("users").document(uid)
+        var total = 0
+        val ops = mutableListOf<(com.google.firebase.firestore.WriteBatch) -> Unit>()
+        for (collection in listOf("closetItems", "outfits", "wearLogs")) {
+            val snap = userRef.collection(collection).whereEqualTo("userId", uid).get().await()
+            snap.documents.forEach { d -> ops.add { b -> b.delete(d.reference) }; total++ }
+        }
+        commitInChunks(ops, "users/$uid")
+        total
+    }
+
+    private suspend fun commitInChunks(
+        ops: List<(com.google.firebase.firestore.WriteBatch) -> Unit>,
+        pathForErrors: String
+    ) {
+        try {
+            ops.chunked(400).forEach { chunk ->
+                val batch = db.batch()
+                chunk.forEach { it(batch) }
+                batch.commit().await()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, pathForErrors)
+            throw e
+        }
+    }
+
+    private fun checkedImage(base64: String): String {
+        require(base64.length <= 120_000) { "Photo is too large to save. Try a different photo." }
+        return base64
     }
 
     suspend fun seedStarterCapsuleWardrobe(): Result<Int> = runCatching {

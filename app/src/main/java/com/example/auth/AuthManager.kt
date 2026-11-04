@@ -8,7 +8,7 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
-import com.example.R
+import com.example.data.settings.AppSettings
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -46,9 +46,7 @@ fun attemptAutoSignIn(
         onAuthSuccess()
         return
     }
-    val clientId = try {
-        context.getString(R.string.default_web_client_id)
-    } catch (e: Exception) {
+    val clientId = AppSettings.get(context).effectiveWebClientId() ?: run {
         onUnauthenticated()
         return
     }
@@ -89,10 +87,8 @@ fun onGoogleSignInClicked(
     scope: CoroutineScope,
     onAuthCancelled: () -> Unit = {}
 ) {
-    val clientId = try {
-        context.getString(R.string.default_web_client_id)
-    } catch (e: Exception) {
-        onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
+    val clientId = AppSettings.get(context).effectiveWebClientId() ?: run {
+        onAuthError("Google Sign-In needs a Web client ID. Add it under API keys & Firebase.")
         return
     }
 
