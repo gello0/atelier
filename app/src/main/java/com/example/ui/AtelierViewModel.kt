@@ -619,9 +619,9 @@ class AtelierViewModel(
         }
     }
 
-    /** Cleans up every photo that isn't a cutout yet (and draws one for items without a photo). */
+    /** Redoes every photo that isn't a sharp cutout yet (and draws one for items without a photo). */
     fun enhanceAllPhotos() {
-        val targets = currentItems.filter { !ImageUtils.isCutoutImage(it.imageBase64) && it.id !in _analyzingItemIds.value }
+        val targets = currentItems.filter { ImageUtils.needsPhotoCleanup(it.imageBase64) && it.id !in _analyzingItemIds.value }
         if (targets.isEmpty()) {
             showBanner("All photos are already cleaned up.")
             return

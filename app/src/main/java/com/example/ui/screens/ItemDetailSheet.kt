@@ -1,5 +1,23 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.example.ui.components.StudioObsidianBackground
+import com.example.util.ImageUtils
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,6 +82,10 @@ fun ItemDetailSheet(
     onDelete: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    var showFullPhoto by remember { mutableStateOf(false) }
+    if (showFullPhoto) {
+        FullPhotoViewer(item = item, onDismiss = { showFullPhoto = false })
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             modifier = Modifier
@@ -75,7 +97,12 @@ fun ItemDetailSheet(
         ) {
             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Box(Modifier.widthIn(max = 300.dp).fillMaxWidth().aspectRatio(1f)) {
-                    GarmentVisualThumbnail(item = item, fillTile = true, cornerRadius = 26.dp)
+                    GarmentVisualThumbnail(
+                        item = item,
+                        fillTile = true,
+                        cornerRadius = 26.dp,
+                        modifier = Modifier.clickable(enabled = item.imageBase64.isNotBlank()) { showFullPhoto = true }
+                    )
                     if (isBusy) {
                         CircularProgressIndicator(
                             modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).size(18.dp),
@@ -176,5 +203,61 @@ private fun Fact(text: String) {
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         )
+    }
+}
+
+/** Full-screen photo with pinch-to-zoom, pan and double-tap to zoom. Tap the X or press back to close. */
+@Composable
+private fun FullPhotoViewer(item: ClosetItem, onDismiss: () -> Unit) {
+    val bitmap = remember(item.imageBase64) { ImageUtils.decodeBase64ToImageBitmap(item.imageBase64) } ?: return
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(StudioObsidianBackground)
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        scale = (scale * zoom).coerceIn(1f, 5f)
+                        offset = if (scale == 1f) Offset.Zero else offset + pan
+                    }
+                }
+                .pointerInput(Unit) {
+                    detectTapGestures(onDoubleTap = {
+                        if (scale > 1f) {
+                            scale = 1f
+                            offset = Offset.Zero
+                        } else {
+                            scale = 2.5f
+                        }
+                    })
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = item.name,
+                contentScale = ContentScale.Fit,
+                filterQuality = FilterQuality.High,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offset.x,
+                        translationY = offset.y
+                    )
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp)
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            }
+        }
     }
 }
