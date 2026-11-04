@@ -1,5 +1,6 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 import java.time.Duration
+import java.util.Properties
 
 plugins {
   alias(libs.plugins.android.application)
@@ -51,8 +52,14 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      // Installs next to the AI Studio build instead of replacing it.
-      applicationIdSuffix = ".dev"
+      // Local-only: with atelier.devApp=true in local.properties, debug builds install as a
+      // separate "….dev" app next to the AI Studio build. AI Studio builds are unaffected.
+      val localProps = Properties().apply {
+        rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+      }
+      if (localProps.getProperty("atelier.devApp") == "true") {
+        applicationIdSuffix = ".dev"
+      }
       // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
       // AI Studio.
       signingConfig = signingConfigs.getByName("debugConfig")
