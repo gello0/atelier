@@ -23,8 +23,10 @@ class AppSettings private constructor(context: Context) {
 
     // ---------- Gemini ----------
 
+    /** Saved key, else a key bundled into debug builds (app/src/debug/res/values/local_keys.xml). */
     var geminiApiKey: String
         get() = prefs.getString(KEY_GEMINI_API_KEY, "").orEmpty().trim()
+            .ifBlank { bundledString("gemini_api_key_default").orEmpty() }
         set(value) = prefs.edit().putString(KEY_GEMINI_API_KEY, value.trim()).apply()
 
     var textModel: String

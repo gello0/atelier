@@ -17,3 +17,7 @@ local.properties
 .env
 debug.keystore
 *-debug.log
+
+# Debug-only Firebase config copied from the AI Studio build
+app/src/debug/res/values/firebase_local.xml
+app/src/debug/res/values/local_keys.xml
