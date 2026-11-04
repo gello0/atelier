@@ -247,15 +247,14 @@ class AtelierViewModel(
         }
     }
 
-    fun refreshFromDeviceGps(context: Context) {
+    fun refreshFromDeviceGps(context: Context, showFailureBanner: Boolean = true) {
         viewModelScope.launch {
-            _weatherState.value = DataUiState.Loading
             val gpsCity = weatherRepository.resolveDeviceGpsLocation(context.applicationContext)
             if (gpsCity != null) {
                 loadWeatherForCity(gpsCity)
-            } else {
+            } else if (showFailureBanner) {
                 loadWeatherForCity(PRESET_CITIES.first())
-                showBanner("GPS location unavailable in emulator; showing New York forecast. Use City Search to pick any city.")
+                showBanner("Current location unavailable; showing New York. Use City Search to pick any location.")
             }
         }
     }
