@@ -25,7 +25,10 @@ fun configureAppCheck(context: Context, intent: Intent?) {
         if (AppSettings.get(context).usesCustomFirebase()) return
 
         if (BuildConfig.DEBUG) {
-            val debugToken = intent?.getStringExtra(DEBUG_TOKEN_EXTRA)
+            // Token from the launching intent (AI Studio), else one bundled into debug builds.
+            val debugToken = intent?.getStringExtra(DEBUG_TOKEN_EXTRA)?.ifBlank { null }
+                ?: context.resources.getIdentifier("appcheck_debug_token", "string", context.packageName)
+                    .takeIf { it != 0 }?.let { context.getString(it).trim() }
 
             if (!debugToken.isNullOrEmpty()) {
                 val persistenceKey = FirebaseApp.getInstance().persistenceKey

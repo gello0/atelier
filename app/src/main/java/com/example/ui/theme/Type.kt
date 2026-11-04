@@ -8,12 +8,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.R
 
-val PlayfairDisplayFontFamily = FontFamily(
-    Font(R.font.playfair_display, FontWeight.Normal),
-    Font(R.font.playfair_display, FontWeight.SemiBold),
-    Font(R.font.playfair_display, FontWeight.Bold)
-)
-
 val PlusJakartaSansFontFamily = FontFamily(
     Font(R.font.plus_jakarta_sans, FontWeight.Normal),
     Font(R.font.plus_jakarta_sans, FontWeight.Medium),
@@ -23,36 +17,36 @@ val PlusJakartaSansFontFamily = FontFamily(
 
 val Typography = Typography(
     displayLarge = TextStyle(
-        fontFamily = PlayfairDisplayFontFamily,
+        fontFamily = PlusJakartaSansFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 44.sp,
-        lineHeight = 52.sp,
+        fontSize = 36.sp,
+        lineHeight = 44.sp,
         letterSpacing = (-0.5).sp
     ),
     displayMedium = TextStyle(
-        fontFamily = PlayfairDisplayFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 34.sp,
-        lineHeight = 42.sp,
+        fontFamily = PlusJakartaSansFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 28.sp,
+        lineHeight = 36.sp,
         letterSpacing = (-0.25).sp
     ),
     headlineLarge = TextStyle(
-        fontFamily = PlayfairDisplayFontFamily,
+        fontFamily = PlusJakartaSansFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 28.sp,
-        lineHeight = 36.sp
-    ),
-    headlineMedium = TextStyle(
-        fontFamily = PlayfairDisplayFontFamily,
-        fontWeight = FontWeight.SemiBold,
         fontSize = 24.sp,
         lineHeight = 32.sp
     ),
-    headlineSmall = TextStyle(
-        fontFamily = PlayfairDisplayFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 20.sp,
+    headlineMedium = TextStyle(
+        fontFamily = PlusJakartaSansFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 22.sp,
         lineHeight = 28.sp
+    ),
+    headlineSmall = TextStyle(
+        fontFamily = PlusJakartaSansFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 19.sp,
+        lineHeight = 26.sp
     ),
     titleLarge = TextStyle(
         fontFamily = PlusJakartaSansFontFamily,

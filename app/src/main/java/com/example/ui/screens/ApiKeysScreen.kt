@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -190,22 +192,40 @@ fun ApiKeysContent(onClose: (() -> Unit)?, setupMessage: String? = null) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        OutlinedButton(
-            onClick = {
-                val text = clipboard.getText()?.text.orEmpty()
-                fbMessage = try {
-                    fb = FirebaseConfig.fromGoogleServicesJson(text, context.packageName, fb.firestoreDatabaseId)
-                    "Filled in from google-services.json. Check the fields, then save."
-                } catch (e: Exception) {
-                    "The clipboard doesn't contain a valid google-services.json."
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Paste google-services.json")
+        fun applyJson(text: String) {
+            val result = FirebaseConfig.parseConfigJson(text, context.packageName, fb)
+            result.config?.let { fb = it }
+            fbMessage = result.message
         }
+        val jsonFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) {
+                val text = try {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }.orEmpty()
+                } catch (e: Exception) {
+                    ""
+                }
+                applyJson(text)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = { jsonFilePicker.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+                modifier = Modifier.weight(1f)
+            ) { Text("Choose file") }
+            OutlinedButton(
+                onClick = { applyJson(clipboard.getText()?.text.orEmpty()) },
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Paste")
+            }
+        }
+        Text(
+            "Use google-services.json (it has the app's keys), not firebase.json.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         KeyField("Web API key", fb.apiKey) { fb = fb.copy(apiKey = it) }
         KeyField("App ID", fb.appId, "1:1234567890:android:abc…") { fb = fb.copy(appId = it) }
         KeyField("Project ID", fb.projectId) { fb = fb.copy(projectId = it) }

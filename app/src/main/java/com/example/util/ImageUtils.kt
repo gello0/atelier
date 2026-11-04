@@ -409,6 +409,23 @@ object ImageUtils {
     fun isCutoutImage(base64Str: String): Boolean =
         base64Str.startsWith("UklGR") || base64Str.startsWith("iVBOR")
 
+    /** Longest side in pixels of a stored photo, without decoding the whole image. */
+    fun storedImageSize(base64Str: String): Int {
+        if (base64Str.isBlank()) return 0
+        return try {
+            val bytes = Base64.decode(base64Str, Base64.DEFAULT)
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+            max(opts.outWidth, opts.outHeight)
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    /** True when an item's photo should be redone: missing, not a cutout yet, or low resolution. */
+    fun needsPhotoCleanup(base64Str: String): Boolean =
+        !isCutoutImage(base64Str) || storedImageSize(base64Str) < 600
+
     /** Draws a bitmap with transparency onto white (models and JPEG need an opaque image). */
     fun flattenOnWhite(source: Bitmap): Bitmap {
         if (!source.hasAlpha()) return source
@@ -423,7 +440,7 @@ object ImageUtils {
      * Crops a transparent cutout to its visible content and centres it in a square canvas with
      * even padding, so every closet tile lines up like a product grid.
      */
-    fun trimToContentSquare(source: Bitmap, outSize: Int = 640, paddingFraction: Float = 0.06f): Bitmap {
+    fun trimToContentSquare(source: Bitmap, outSize: Int = 1024, paddingFraction: Float = 0.06f): Bitmap {
         val bmp = ensureSoftwareArgbBitmap(source)
         val w = bmp.width
         val h = bmp.height
@@ -506,16 +523,38 @@ object ImageUtils {
             if (y > 0) seed(i - w)
             if (y < h - 1) seed(i + w)
         }
-        // Fully clear background, half-fade pixels that touch it for a softer edge.
-        for (i in 0 until w * h) {
-            if (bg[i]) {
-                px[i] = 0
-            } else {
+        // Clear the background. Pixels within 2px of it get alpha from how far their colour is
+        // from the background (a soft, anti-aliased edge), and the background tint is removed.
+        val near = IntArray(w * h) { if (bg[it]) 0 else Int.MAX_VALUE }
+        repeat(2) { pass ->
+            for (i in 0 until w * h) {
+                if (near[i] != Int.MAX_VALUE) continue
                 val x = i % w
                 val y = i / w
-                val touches = (x > 0 && bg[i - 1]) || (x < w - 1 && bg[i + 1]) ||
-                    (y > 0 && bg[i - w]) || (y < h - 1 && bg[i + w])
-                if (touches) px[i] = (px[i] and 0x00FFFFFF) or (0x99 shl 24)
+                val touches = (x > 0 && near[i - 1] == pass) || (x < w - 1 && near[i + 1] == pass) ||
+                    (y > 0 && near[i - w] == pass) || (y < h - 1 && near[i + w] == pass)
+                if (touches) near[i] = pass + 1
+            }
+        }
+        val tol = sqrt(tolSq.toDouble()).toFloat()
+        for (i in 0 until w * h) {
+            when {
+                bg[i] -> px[i] = 0
+                near[i] <= 2 -> {
+                    val c = px[i]
+                    val r = (c shr 16) and 0xFF
+                    val g = (c shr 8) and 0xFF
+                    val b = c and 0xFF
+                    val dr = (r - br).toFloat()
+                    val dg = (g - bgG).toFloat()
+                    val db = (b - bb).toFloat()
+                    val dist = sqrt(dr * dr + dg * dg + db * db)
+                    val a = ((dist - tol) / (tol * 2f)).coerceIn(if (near[i] == 1) 0.15f else 0.5f, 1f)
+                    val nr = ((r - (1f - a) * br) / a).toInt().coerceIn(0, 255)
+                    val ng = ((g - (1f - a) * bgG) / a).toInt().coerceIn(0, 255)
+                    val nb = ((b - (1f - a) * bb) / a).toInt().coerceIn(0, 255)
+                    px[i] = ((a * 255f).toInt() shl 24) or (nr shl 16) or (ng shl 8) or nb
+                }
             }
         }
         bmp.setPixels(px, 0, w, 0, 0, w, h)
@@ -524,8 +563,8 @@ object ImageUtils {
 
     /** Encodes a transparent cutout as WebP, shrinking until it fits the Firestore budget. */
     fun encodeCutoutToBase64(bitmap: Bitmap): String {
-        val sizes = intArrayOf(640, 560, 480, 400, 320)
-        val qualities = intArrayOf(85, 75, 65)
+        val sizes = intArrayOf(1024, 896, 768, 640, 512, 400)
+        val qualities = intArrayOf(82, 72, 62)
         @Suppress("DEPRECATION")
         val format = if (android.os.Build.VERSION.SDK_INT >= 30) {
             Bitmap.CompressFormat.WEBP_LOSSY

@@ -23,8 +23,10 @@ class AppSettings private constructor(context: Context) {
 
     // ---------- Gemini ----------
 
+    /** Saved key, else a key bundled into debug builds (app/src/debug/res/values/local_keys.xml). */
     var geminiApiKey: String
         get() = prefs.getString(KEY_GEMINI_API_KEY, "").orEmpty().trim()
+            .ifBlank { bundledString("gemini_api_key_default").orEmpty() }
         set(value) = prefs.edit().putString(KEY_GEMINI_API_KEY, value.trim()).apply()
 
     var textModel: String
@@ -212,7 +214,47 @@ data class FirebaseConfig(
         return builder.build()
     }
 
+    class ParseResult(val config: FirebaseConfig?, val message: String)
+
     companion object {
+        /**
+         * Reads pasted or picked JSON and explains what was (or wasn't) found. Accepts
+         * google-services.json; recognises firebase.json and takes only its database ID.
+         */
+        fun parseConfigJson(raw: String, packageName: String, current: FirebaseConfig): ParseResult {
+            val text = raw.trim().removePrefix("﻿")
+            if (text.isBlank()) return ParseResult(null, "Nothing to read: the clipboard or file is empty.")
+            val start = text.indexOf('{')
+            val end = text.lastIndexOf('}')
+            if (start < 0 || end <= start) return ParseResult(null, "That isn't JSON. Copy the whole google-services.json file.")
+            val root = try {
+                JSONObject(text.substring(start, end + 1))
+            } catch (e: Exception) {
+                return ParseResult(null, "The JSON is incomplete or broken. Copy the whole file, including the first { and last }.")
+            }
+            if (root.has("project_info") && root.has("client")) {
+                return try {
+                    val parsed = fromGoogleServicesJson(root.toString(), packageName, current.firestoreDatabaseId)
+                    ParseResult(parsed, "Filled in from google-services.json. Check the fields, then tap Save Firebase.")
+                } catch (e: Exception) {
+                    ParseResult(null, "google-services.json is missing fields: ${e.message}")
+                }
+            }
+            val dbId = root.optJSONArray("firestore")?.optJSONObject(0)?.optString("database").orEmpty()
+            if (root.has("firestore") || root.has("emulators")) {
+                return if (dbId.isNotBlank()) {
+                    ParseResult(
+                        current.copy(firestoreDatabaseId = dbId),
+                        "That's firebase.json. It has no app keys, only the database ID ($dbId), which was filled in. " +
+                            "The keys are in google-services.json."
+                    )
+                } else {
+                    ParseResult(null, "That's firebase.json. It has no app keys; use google-services.json instead.")
+                }
+            }
+            return ParseResult(null, "This JSON doesn't look like google-services.json.")
+        }
+
         /**
          * Fills the config from the contents of a google-services.json file, picking the Android
          * client that matches [packageName] when there are several.

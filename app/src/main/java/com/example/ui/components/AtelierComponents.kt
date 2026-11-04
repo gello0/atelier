@@ -57,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,6 +66,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -154,6 +156,7 @@ fun GarmentVisualThumbnail(
             decodedBitmap != null && isCutout -> Image(
                 bitmap = decodedBitmap,
                 contentDescription = item.name,
+                filterQuality = FilterQuality.High,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(if (fillTile) 10.dp else 6.dp),
@@ -162,6 +165,7 @@ fun GarmentVisualThumbnail(
             decodedBitmap != null -> Image(
                 bitmap = decodedBitmap,
                 contentDescription = item.name,
+                filterQuality = FilterQuality.High,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
@@ -563,286 +567,129 @@ fun WeatherHeroCard(
 ) {
     val activeForecast: DailyWeatherForecast? = weatherSnapshot?.dailyForecasts?.getOrNull(selectedDayIndex)
         ?: weatherSnapshot?.dailyForecasts?.firstOrNull()
+    var expanded by rememberSaveable { mutableStateOf(false) }
 
-    Card(
+    // Compact one-line strip; tap to open the day picker and location controls.
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
         modifier = modifier
             .fillMaxWidth()
-            .testTag("weather_hero_card"),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            .testTag("weather_hero_card")
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f),
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
-                            MaterialTheme.colorScheme.surface
+        Column {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                when {
+                    isLoading -> {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Loading weather", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    }
+                    errorMessage != null || activeForecast == null -> {
+                        Text(
+                            errorMessage ?: "No weather yet",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
-                    )
-                )
-                .padding(18.dp)
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { onOpenCitySearch() }
-                            .padding(vertical = 4.dp, horizontal = 6.dp)
-                            .testTag("city_selector_button")
-                    ) {
+                        TextButton(onClick = onOpenCitySearch) { Text("Choose city") }
+                    }
+                    else -> {
                         Icon(
-                            imageVector = Icons.Default.LocationCity,
-                            contentDescription = "Select City",
+                            imageVector = weatherConditionIcon(activeForecast.weatherCode, activeForecast.isRainy),
+                            contentDescription = activeForecast.conditionLabel,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = weatherSnapshot?.location?.displayTitle ?: "Select City",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Tap to change city forecast",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        AssistChip(
-                            onClick = onToggleUnit,
-                            label = {
-                                Text(
-                                    text = if (useFahrenheit) "°F" else "°C",
-                                    style = MaterialTheme.typography.labelLarge
-                                )
-                            },
-                            modifier = Modifier.testTag("toggle_temp_unit_chip")
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = formatTemp(activeForecast.tempCurrentOrMidC, useFahrenheit),
+                            style = MaterialTheme.typography.titleMedium
                         )
-                        IconButton(
-                            onClick = onRefreshGps,
-                            modifier = Modifier.testTag("gps_weather_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MyLocation,
-                                contentDescription = "Use Local GPS Weather",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        IconButton(
-                            onClick = onOpenCitySearch,
-                            modifier = Modifier.testTag("search_city_icon_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "Search City",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = buildString {
+                                append(activeForecast.dayLabel)
+                                weatherSnapshot?.location?.name?.let { append(" · ").append(it) }
+                                if (activeForecast.precipitationProbability >= 30) {
+                                    append(" · ").append(activeForecast.precipitationProbability).append("% rain")
+                                }
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (expanded) "Hide forecast" else "Show forecast",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
+            }
 
-                when {
-                    isLoading -> {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 16.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Fetching live meteorological telemetry...",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-                    }
-
-                    errorMessage != null -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = errorMessage,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            OutlinedButton(onClick = onOpenCitySearch) {
-                                Text("Choose City")
-                            }
-                        }
-                    }
-
-                    activeForecast != null -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = weatherConditionIcon(
-                                            activeForecast.weatherCode,
-                                            activeForecast.isRainy
-                                        ),
-                                        contentDescription = activeForecast.conditionLabel,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(34.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        text = formatTemp(activeForecast.tempCurrentOrMidC, useFahrenheit),
-                                        style = MaterialTheme.typography.displayMedium
-                                    )
-                                }
-                                Text(
-                                    text = "${activeForecast.dayLabel} · ${activeForecast.conditionLabel} · Feels like ${
-                                        formatTemp(activeForecast.feelsLikeC, useFahrenheit)
-                                    }",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-
-                            Column(
-                                horizontalAlignment = Alignment.End,
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
+            if (expanded && activeForecast != null && !isLoading) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp)
+                ) {
+                    Text(
+                        text = "${activeForecast.conditionLabel} · feels like ${formatTemp(activeForecast.feelsLikeC, useFahrenheit)} · " +
+                            "wind ${activeForecast.windSpeedKmh.roundToInt()} km/h",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        itemsIndexed(weatherSnapshot?.dailyForecasts.orEmpty()) { index, day ->
+                            val isSelected = index == selectedDayIndex
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { onSelectDay(index) }
+                                    .testTag("forecast_day_$index")
                             ) {
-                                Surface(
-                                    shape = RoundedCornerShape(50),
-                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 ) {
+                                    val fg = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                                    Text(day.dayLabel, style = MaterialTheme.typography.labelSmall, color = fg)
                                     Text(
-                                        text = "Warmth Tier ${activeForecast.recommendedWarmthLevel}/5",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                        "${formatTemp(day.tempMaxC, useFahrenheit)}/${formatTemp(day.tempMinC, useFahrenheit)}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = fg
                                     )
                                 }
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.WaterDrop,
-                                            contentDescription = "Rain Chance",
-                                            modifier = Modifier.size(14.dp),
-                                            tint = MaterialTheme.colorScheme.tertiary
-                                        )
-                                        Text(
-                                            text = "${activeForecast.precipitationProbability}%",
-                                            style = MaterialTheme.typography.labelMedium
-                                        )
-                                    }
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.Air,
-                                            contentDescription = "Wind Speed",
-                                            modifier = Modifier.size(14.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Text(
-                                            text = "${activeForecast.windSpeedKmh.roundToInt()} km/h",
-                                            style = MaterialTheme.typography.labelMedium
-                                        )
-                                    }
-                                }
                             }
                         }
-
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = activeForecast.stylingAdvisory,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(12.dp)
-                            )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = onOpenCitySearch, modifier = Modifier.testTag("city_selector_button")) {
+                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("City")
                         }
-
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            contentPadding = PaddingValues(vertical = 2.dp)
-                        ) {
-                            itemsIndexed(weatherSnapshot?.dailyForecasts.orEmpty()) { index, day ->
-                                val isSelected = index == selectedDayIndex
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = if (isSelected) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
-                                    },
-                                    border = if (isSelected) null else BorderStroke(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
-                                    ),
-                                    modifier = Modifier
-                                        .clickable { onSelectDay(index) }
-                                        .testTag("forecast_day_$index")
-                                ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                                    ) {
-                                        Text(
-                                            text = day.dayLabel,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = if (isSelected) {
-                                                MaterialTheme.colorScheme.onPrimary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurface
-                                            }
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Icon(
-                                            imageVector = weatherConditionIcon(day.weatherCode, day.isRainy),
-                                            contentDescription = day.conditionLabel,
-                                            tint = if (isSelected) {
-                                                MaterialTheme.colorScheme.onPrimary
-                                            } else {
-                                                MaterialTheme.colorScheme.primary
-                                            },
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = "${formatTemp(day.tempMaxC, useFahrenheit)} / ${
-                                                formatTemp(day.tempMinC, useFahrenheit)
-                                            }",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = if (isSelected) {
-                                                MaterialTheme.colorScheme.onPrimary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            }
-                                        )
-                                    }
-                                }
-                            }
+                        TextButton(onClick = onRefreshGps, modifier = Modifier.testTag("gps_weather_button")) {
+                            Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("My location")
+                        }
+                        TextButton(onClick = onToggleUnit, modifier = Modifier.testTag("toggle_temp_unit_chip")) {
+                            Text(if (useFahrenheit) "°F" else "°C")
                         }
                     }
                 }

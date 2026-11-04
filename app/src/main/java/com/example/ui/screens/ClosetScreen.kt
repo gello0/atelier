@@ -133,7 +133,7 @@ fun ClosetScreen(
 
     val allItems = (closetItemsState as? DataUiState.Success)?.data.orEmpty()
     val pendingItems = remember(allItems) { allItems.filter { it.isPendingAiAnalysis() } }
-    val rawPhotoCount = remember(allItems) { allItems.count { !ImageUtils.isCutoutImage(it.imageBase64) } }
+    val rawPhotoCount = remember(allItems) { allItems.count { ImageUtils.needsPhotoCleanup(it.imageBase64) } }
     // Drop selections for items that no longer exist.
     val liveSelection = selection.filter { id -> allItems.any { it.id == id } }.toSet()
     val selecting = liveSelection.isNotEmpty()
