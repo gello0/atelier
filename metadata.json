@@ -1,0 +1,6 @@
+{
+  "name": "Atelier",
+  "description": "AI-powered digital closet and weather-responsive outfit stylist with cloud sync, photo auto-tagging, mix-and-match canvas, and wear calendar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

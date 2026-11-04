@@ -1,0 +1,258 @@
+{
+  "entities": {
+    "ClosetItem": {
+      "title": "ClosetItem",
+      "description": "A garment, footwear, or accessory item in a user's digital closet.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name of the garment (1-100 chars)."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["TOP", "BOTTOM", "OUTERWEAR", "ONE_PIECE", "FOOTWEAR", "ACCESSORY"],
+          "description": "Primary clothing category."
+        },
+        "subCategory": {
+          "type": "string",
+          "description": "Specific garment type (e.g., Trench Coat, Cashmere Sweater, Loafers)."
+        },
+        "materialComposition": {
+          "type": "string",
+          "description": "Detected or scanned fiber/material composition (e.g., 100% Merino Wool, 80% Cotton 20% Linen)."
+        },
+        "colorName": {
+          "type": "string",
+          "description": "Human-readable color name."
+        },
+        "colorHex": {
+          "type": "string",
+          "description": "Hex color code for visual swatch."
+        },
+        "warmthLevel": {
+          "type": "integer",
+          "description": "Thermal insulation rating from 1 (Ultralight/Hot weather) to 5 (Heavy Winter)."
+        },
+        "isRainResistant": {
+          "type": "boolean",
+          "description": "Whether the garment is suitable for rain or wet conditions."
+        },
+        "isWindResistant": {
+          "type": "boolean",
+          "description": "Whether the garment blocks wind."
+        },
+        "occasions": {
+          "type": "array",
+          "description": "List of suitable occasions (up to 10 strings)."
+        },
+        "seasons": {
+          "type": "array",
+          "description": "List of suitable seasons (up to 6 strings)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Fabric, care instructions, fit, or styling notes."
+        },
+        "imageBase64": {
+          "type": "string",
+          "description": "Optional compressed thumbnail image encoded as base64."
+        },
+        "wearCount": {
+          "type": "integer",
+          "description": "Number of times worn."
+        },
+        "lastWornEpochDay": {
+          "type": "integer",
+          "description": "Epoch day when last worn (0 if never worn)."
+        },
+        "isFavorite": {
+          "type": "boolean",
+          "description": "Whether the item is marked as a wardrobe favorite."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "name",
+        "category",
+        "subCategory",
+        "colorName",
+        "colorHex",
+        "warmthLevel",
+        "isRainResistant",
+        "isWindResistant",
+        "occasions",
+        "seasons",
+        "notes",
+        "imageBase64",
+        "wearCount",
+        "lastWornEpochDay",
+        "isFavorite",
+        "createdAt"
+      ]
+    },
+    "Outfit": {
+      "title": "Outfit",
+      "description": "A curated or custom-built outfit composed of closet items.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "name": {
+          "type": "string",
+          "description": "Title of the outfit."
+        },
+        "itemIds": {
+          "type": "array",
+          "description": "Non-empty list of ClosetItem IDs included in the outfit (1-12 items)."
+        },
+        "occasion": {
+          "type": "string",
+          "description": "Target occasion for this outfit."
+        },
+        "targetWeatherSummary": {
+          "type": "string",
+          "description": "Summary of the weather conditions this outfit suits."
+        },
+        "weatherComfortScore": {
+          "type": "integer",
+          "description": "Calculated weather match score (0-100)."
+        },
+        "stylistNotes": {
+          "type": "string",
+          "description": "AI or user styling rationale and layering tips."
+        },
+        "isAiGenerated": {
+          "type": "boolean",
+          "description": "Whether this outfit was suggested by the AI Stylist."
+        },
+        "isFavorite": {
+          "type": "boolean",
+          "description": "Whether the outfit is bookmarked as a favorite."
+        },
+        "wearCount": {
+          "type": "integer",
+          "description": "Number of times this outfit has been worn."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "name",
+        "itemIds",
+        "occasion",
+        "targetWeatherSummary",
+        "weatherComfortScore",
+        "stylistNotes",
+        "isAiGenerated",
+        "isFavorite",
+        "wearCount",
+        "createdAt"
+      ]
+    },
+    "WearLog": {
+      "title": "WearLog",
+      "description": "A calendar log recording an outfit worn or scheduled on a specific date.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "dateIso": {
+          "type": "string",
+          "description": "ISO-8601 date string (YYYY-MM-DD)."
+        },
+        "outfitId": {
+          "type": "string",
+          "description": "ID of the associated Outfit (or empty if ad-hoc)."
+        },
+        "outfitName": {
+          "type": "string",
+          "description": "Display name of the worn outfit."
+        },
+        "itemIds": {
+          "type": "array",
+          "description": "List of ClosetItem IDs worn on this date."
+        },
+        "occasion": {
+          "type": "string",
+          "description": "Occasion for the logged outfit."
+        },
+        "weatherTempC": {
+          "type": "number",
+          "description": "Recorded or forecasted temperature in Celsius."
+        },
+        "weatherCondition": {
+          "type": "string",
+          "description": "Weather condition label on that date."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional journal notes about how the outfit felt."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "dateIso",
+        "outfitId",
+        "outfitName",
+        "itemIds",
+        "occasion",
+        "weatherTempC",
+        "weatherCondition",
+        "notes",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/closetItems/{itemId}": {
+      "schema": { "$ref": "#/entities/ClosetItem" },
+      "description": "User's digital closet items."
+    },
+    "/users/{userId}/outfits/{outfitId}": {
+      "schema": { "$ref": "#/entities/Outfit" },
+      "description": "User's saved and AI-curated outfits."
+    },
+    "/users/{userId}/wearLogs/{logId}": {
+      "schema": { "$ref": "#/entities/WearLog" },
+      "description": "User's calendar wear history and scheduled outfit logs."
+    }
+  }
+}

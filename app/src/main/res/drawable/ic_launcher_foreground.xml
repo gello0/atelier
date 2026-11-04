@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Warm sun / weather halo accent -->
+    <path
+        android:fillColor="#E07A5F"
+        android:pathData="M68,36m-10,0a10,10 0,1 1,20 0a10,10 0,1 1,-20 0" />
+    <!-- Bold checkroom / coat hanger silhouette inside safe zone -->
+    <path
+        android:fillColor="#F5F0E6"
+        android:pathData="M54,28C49.58,28 46,31.58 46,36H50C50,33.79 51.79,32 54,32C56.21,32 58,33.79 58,36C58,37.86 56.72,39.42 55,39.86V44.6L26.8,63.4C24.8,64.73 25.74,68 28.14,68H79.86C82.26,68 83.2,64.73 81.2,63.4L59,48.6V43.4C61.9,41.8 64,39.1 64,36C64,31.58 59.52,28 54,28ZM36.2,62L54,50.13L71.8,62H36.2Z" />
+</vector>

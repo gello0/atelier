@@ -1,0 +1,184 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidClosetItem(data, userId) {
+      return data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.category is string && data.category in ['TOP', 'BOTTOM', 'OUTERWEAR', 'ONE_PIECE', 'FOOTWEAR', 'ACCESSORY'] &&
+             data.subCategory is string && data.subCategory.size() <= 60 &&
+             (!('materialComposition' in data) || (data.materialComposition is string && data.materialComposition.size() <= 200)) &&
+             data.colorName is string && data.colorName.size() >= 1 && data.colorName.size() <= 50 &&
+             data.colorHex is string && data.colorHex.size() >= 4 && data.colorHex.size() <= 12 &&
+             data.warmthLevel is int && data.warmthLevel >= 1 && data.warmthLevel <= 5 &&
+             data.isRainResistant is bool &&
+             data.isWindResistant is bool &&
+             data.occasions is list && data.occasions.size() <= 10 && (data.occasions.size() == 0 || data.occasions[0] is string) &&
+             data.seasons is list && data.seasons.size() <= 6 && (data.seasons.size() == 0 || data.seasons[0] is string) &&
+             data.notes is string && data.notes.size() <= 500 &&
+             data.imageBase64 is string && data.imageBase64.size() <= 120000 &&
+             data.wearCount is int && data.wearCount >= 0 &&
+             data.lastWornEpochDay is int && data.lastWornEpochDay >= 0 &&
+             data.isFavorite is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    function isValidOutfit(data, userId) {
+      return data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.itemIds is list && data.itemIds.size() >= 1 && data.itemIds.size() <= 12 && data.itemIds[0] is string &&
+             data.occasion is string && data.occasion.size() >= 1 && data.occasion.size() <= 60 &&
+             data.targetWeatherSummary is string && data.targetWeatherSummary.size() <= 120 &&
+             data.weatherComfortScore is int && data.weatherComfortScore >= 0 && data.weatherComfortScore <= 100 &&
+             data.stylistNotes is string && data.stylistNotes.size() <= 600 &&
+             data.isAiGenerated is bool &&
+             data.isFavorite is bool &&
+             data.wearCount is int && data.wearCount >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    function isValidWearLog(data, userId) {
+      return data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
+             data.dateIso is string && data.dateIso.size() == 10 && data.dateIso.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+             data.outfitId is string && data.outfitId.size() <= 128 &&
+             data.outfitName is string && data.outfitName.size() >= 1 && data.outfitName.size() <= 100 &&
+             data.itemIds is list && data.itemIds.size() >= 1 && data.itemIds.size() <= 12 && data.itemIds[0] is string &&
+             data.occasion is string && data.occasion.size() <= 60 &&
+             (data.weatherTempC is int || data.weatherTempC is float) && data.weatherTempC >= -80 && data.weatherTempC <= 70 &&
+             data.weatherCondition is string && data.weatherCondition.size() <= 80 &&
+             data.notes is string && data.notes.size() <= 400 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    match /users/{userId}/closetItems/{itemId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(itemId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && request.auth.uid == userId && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(itemId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'name', 'category', 'subCategory', 'colorName', 'colorHex',
+                         'warmthLevel', 'isRainResistant', 'isWindResistant', 'occasions',
+                         'seasons', 'notes', 'imageBase64', 'wearCount', 'lastWornEpochDay',
+                         'isFavorite', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'name', 'category', 'subCategory', 'materialComposition',
+                         'colorName', 'colorHex', 'warmthLevel', 'isRainResistant',
+                         'isWindResistant', 'occasions', 'seasons', 'notes', 'imageBase64',
+                         'wearCount', 'lastWornEpochDay', 'isFavorite', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidClosetItem(incoming(), userId);
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(itemId) &&
+                       isValidClosetItem(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'name', 'category', 'subCategory', 'materialComposition',
+                         'colorName', 'colorHex', 'warmthLevel', 'isRainResistant',
+                         'isWindResistant', 'occasions', 'seasons', 'notes', 'imageBase64',
+                         'wearCount', 'lastWornEpochDay', 'isFavorite', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(itemId) && existing().userId == request.auth.uid;
+    }
+
+    match /users/{userId}/outfits/{outfitId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(outfitId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && request.auth.uid == userId && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(outfitId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'name', 'itemIds', 'occasion', 'targetWeatherSummary',
+                         'weatherComfortScore', 'stylistNotes', 'isAiGenerated',
+                         'isFavorite', 'wearCount', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'name', 'itemIds', 'occasion', 'targetWeatherSummary',
+                         'weatherComfortScore', 'stylistNotes', 'isAiGenerated',
+                         'isFavorite', 'wearCount', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidOutfit(incoming(), userId);
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(outfitId) &&
+                       isValidOutfit(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'name', 'itemIds', 'occasion', 'targetWeatherSummary',
+                         'weatherComfortScore', 'stylistNotes', 'isAiGenerated',
+                         'isFavorite', 'wearCount', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(outfitId) && existing().userId == request.auth.uid;
+    }
+
+    match /users/{userId}/wearLogs/{logId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(logId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && request.auth.uid == userId && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(logId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'dateIso', 'outfitId', 'outfitName', 'itemIds',
+                         'occasion', 'weatherTempC', 'weatherCondition', 'notes', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'dateIso', 'outfitId', 'outfitName', 'itemIds',
+                         'occasion', 'weatherTempC', 'weatherCondition', 'notes', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidWearLog(incoming(), userId);
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(logId) &&
+                       isValidWearLog(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'dateIso', 'outfitId', 'outfitName', 'itemIds',
+                         'occasion', 'weatherTempC', 'weatherCondition', 'notes', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(logId) && existing().userId == request.auth.uid;
+    }
+  }
+}
