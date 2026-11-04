@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.DryCleaning
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.LocationCity
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Search
@@ -71,13 +73,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.example.R
 import com.example.data.model.ClosetItem
 import com.example.data.model.GarmentCategory
 import com.example.data.weather.CityLocation
@@ -118,38 +118,11 @@ fun weatherConditionIcon(code: Int, isRainy: Boolean): ImageVector = when {
     else -> Icons.Default.Cloud
 }
 
-private fun studioCutoutDrawableForItem(item: ClosetItem): Int {
-    val text = "${item.name} ${item.subCategory} ${item.colorName}".lowercase()
-    return when (item.categoryEnum()) {
-        GarmentCategory.TOP -> when {
-            text.contains("hood") -> R.drawable.img_studio_hoodie_sage
-            text.contains("polo") || text.contains("navy") || text.contains("collar") -> R.drawable.img_studio_polo_navy
-            text.contains("white") || text.contains("ivory") || text.contains("cream") || text.contains("tee") -> R.drawable.img_studio_tee_white
-            text.contains("active") || text.contains("jersey") || text.contains("sport") -> R.drawable.img_studio_jersey_active
-            else -> R.drawable.img_studio_crewneck_grey
-        }
-        GarmentCategory.BOTTOM -> when {
-            text.contains("jean") || text.contains("denim") || text.contains("indigo") || text.contains("blue") -> R.drawable.img_studio_jeans_indigo
-            text.contains("camel") || text.contains("beige") || text.contains("khaki") || text.contains("chino") || text.contains("linen") -> R.drawable.img_studio_chinos_camel
-            else -> R.drawable.img_studio_cargos_charcoal
-        }
-        GarmentCategory.OUTERWEAR -> when {
-            text.contains("leather") || text.contains("biker") || text.contains("black") -> R.drawable.img_studio_jacket_leather
-            else -> R.drawable.img_studio_jacket_matte
-        }
-        GarmentCategory.FOOTWEAR -> when {
-            text.contains("red") || text.contains("sport") || text.contains("run") -> R.drawable.img_studio_sneakers_sport
-            else -> R.drawable.img_studio_sneakers_black
-        }
-        GarmentCategory.ACCESSORY -> R.drawable.img_studio_watch_grey
-        GarmentCategory.ONE_PIECE -> R.drawable.img_studio_polo_navy
-    }
-}
-
 /**
- * Dark studio cut-out garment tile matching the reference lookbook aesthetic (#171B22 rounded square).
- * Displays transparent-matted uploaded garment photos with ContentScale.Fit, or renders a
- * photorealistic transparent studio garment cut-out when no photo is present.
+ * Square dark tile showing a closet item like an online-shop grid.
+ * - Clean cutouts (transparent WebP/PNG) are centred with breathing room.
+ * - Older raw photos fill the tile.
+ * - Items without a photo show a simple drawn silhouette in the item's colour.
  */
 @Composable
 fun GarmentVisualThumbnail(
@@ -163,48 +136,42 @@ fun GarmentVisualThumbnail(
     val decodedBitmap = remember(item.imageBase64) {
         ImageUtils.decodeBase64ToImageBitmap(item.imageBase64)
     }
+    val isCutout = remember(item.imageBase64) { ImageUtils.isCutoutImage(item.imageBase64) }
     val swatchColor = remember(item.colorHex) {
         ImageUtils.parseHexColor(item.colorHex)
     }
-    val fallbackDrawableRes = remember(item.category, item.subCategory, item.name, item.colorName) {
-        studioCutoutDrawableForItem(item)
-    }
     val shape = RoundedCornerShape(cornerRadius)
 
-    val boxModifier = if (fillTile) {
-        modifier
-            .fillMaxSize()
-            .clip(shape)
-            .background(StudioTileSurface)
-            .border(1.dp, StudioTileBorder, shape)
-    } else {
-        modifier
-            .size(size)
-            .clip(shape)
-            .background(StudioTileSurface)
-            .border(1.dp, StudioTileBorder, shape)
-    }
-
+    val sized = if (fillTile) modifier.fillMaxSize() else modifier.size(size)
     Box(
-        modifier = boxModifier,
+        modifier = sized
+            .clip(shape)
+            .background(StudioTileSurface)
+            .border(1.dp, StudioTileBorder, shape),
         contentAlignment = Alignment.Center
     ) {
-        if (decodedBitmap != null) {
-            Image(
+        when {
+            decodedBitmap != null && isCutout -> Image(
+                bitmap = decodedBitmap,
+                contentDescription = item.name,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(if (fillTile) 10.dp else 6.dp),
+                contentScale = ContentScale.Fit
+            )
+            decodedBitmap != null -> Image(
                 bitmap = decodedBitmap,
                 contentDescription = item.name,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
-        } else {
-            Image(
-                painter = painterResource(id = fallbackDrawableRes),
-                contentDescription = item.name,
+            else -> Canvas(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(8.dp),
-                contentScale = ContentScale.Fit
-            )
+                    .padding(if (fillTile) 14.dp else 8.dp)
+            ) {
+                drawStudioGarmentCutout(item.categoryEnum(), swatchColor, item.subCategory, item.name)
+            }
         }
 
         if (showColorDot) {
@@ -979,4 +946,41 @@ fun CitySearchDialog(
             }
         }
     )
+}
+
+
+/** A one-line "Notes" toggle; the text only appears when tapped. */
+@Composable
+fun ExpandableNote(text: String, label: String = "Notes", modifier: Modifier = Modifier) {
+    if (text.isBlank()) return
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { expanded = !expanded }
+                .padding(vertical = 4.dp, horizontal = 2.dp)
+        ) {
+            Text(
+                text = if (expanded) "Hide ${label.lowercase()}" else label,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        if (expanded) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+    }
 }

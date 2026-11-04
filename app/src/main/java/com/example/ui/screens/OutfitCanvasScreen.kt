@@ -65,6 +65,7 @@ import com.example.ui.components.GarmentVisualThumbnail
 import com.example.ui.components.OutfitStudioFlatLayCollage
 import com.example.ui.components.formatTemp
 import com.example.util.ImageUtils
+import com.example.util.rememberCameraCapture
 
 @Composable
 fun OutfitCanvasScreen(
@@ -114,28 +115,14 @@ fun OutfitCanvasScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
-            val bmp = ImageUtils.decodeUriToScaledBitmap(context, uri, maxDim = 960)
+            val bmp = ImageUtils.decodeUriToScaledBitmap(context, uri, maxDim = 1280)
             if (bmp != null) {
                 onSetVtonUserPhoto(bmp)
             }
         }
     }
 
-    val vtonCameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bmp ->
-        if (bmp != null) {
-            onSetVtonUserPhoto(bmp)
-        }
-    }
-
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            vtonCameraLauncher.launch(null)
-        }
-    }
+    val takeVtonPhoto = rememberCameraCapture(maxDim = 1280, onPhoto = onSetVtonUserPhoto)
 
     LazyColumn(
         modifier = modifier
@@ -153,7 +140,7 @@ fun OutfitCanvasScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Mix & Match Studio",
+                        text = "Studio",
                         style = MaterialTheme.typography.headlineMedium
                     )
                     Text(
@@ -162,7 +149,7 @@ fun OutfitCanvasScreen(
                                 formatTemp(activeWeather.feelsLikeC, useFahrenheit)
                             } · ${activeWeather.conditionLabel}"
                         } else {
-                            "Compose custom looks & run Virtual Try-On"
+                            "Build a look from your closet"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -212,7 +199,7 @@ fun OutfitCanvasScreen(
                             color = MaterialTheme.colorScheme.primaryContainer
                         ) {
                             Text(
-                                text = "${comfortEvaluation.score}% Comfort",
+                                text = "${comfortEvaluation.score}%",
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
@@ -264,15 +251,15 @@ fun OutfitCanvasScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "AI Virtual Try-On (VTON)",
+                                text = "Try on",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = if (vtonUserPhoto != null) {
-                                    "Your reference photo is active — try on the selected pieces!"
+                                    "See the selected pieces on you"
                                 } else {
-                                    "Add your photo (or generate on an editorial studio model)"
+                                    "Add a photo of yourself, or preview on a model"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -281,7 +268,7 @@ fun OutfitCanvasScreen(
                         if (vtonUserPhoto != null) {
                             Image(
                                 bitmap = vtonUserPhoto.asImageBitmap(),
-                                contentDescription = "Your VTON reference photo",
+                                contentDescription = "Your try-on photo",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
                                     .size(54.dp)
@@ -295,14 +282,14 @@ fun OutfitCanvasScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         OutlinedButton(
-                            onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
+                            onClick = takeVtonPhoto,
                             modifier = Modifier
                                 .weight(1f)
                                 .testTag("vton_camera_button")
                         ) {
                             Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Selfie / Camera")
+                            Text("Camera")
                         }
                         OutlinedButton(
                             onClick = {
@@ -316,7 +303,7 @@ fun OutfitCanvasScreen(
                         ) {
                             Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Your Photo")
+                            Text("Gallery")
                         }
                     }
 
@@ -331,9 +318,9 @@ fun OutfitCanvasScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             if (vtonResultState is AiTaskState.Loading) {
-                                "Synthesizing Virtual Try-On in Background..."
+                                "Creating image…"
                             } else {
-                                "Generate Virtual Try-On (${selectedItems.size} pieces)"
+                                "Try on (${selectedItems.size} pieces)"
                             }
                         )
                     }
@@ -347,7 +334,7 @@ fun OutfitCanvasScreen(
                                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    text = "Gemini Nano Banana 2.1 is rendering your Virtual Try-On in the background (30–60s). Feel free to switch tabs!",
+                                    text = "This takes up to a minute. You can keep using the app.",
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -356,7 +343,7 @@ fun OutfitCanvasScreen(
                         is AiTaskState.Success -> {
                             Image(
                                 bitmap = vtonResultState.data.asImageBitmap(),
-                                contentDescription = "Virtual Try-On Result",
+                                contentDescription = "Try-on result",
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -385,12 +372,12 @@ fun OutfitCanvasScreen(
                 FilterChip(
                     selected = !canvasState.useOnePieceMode,
                     onClick = { onUpdateCanvas { it.copy(useOnePieceMode = false) } },
-                    label = { Text("Top + Bottom Separates") }
+                    label = { Text("Top + bottom") }
                 )
                 FilterChip(
                     selected = canvasState.useOnePieceMode,
                     onClick = { onUpdateCanvas { it.copy(useOnePieceMode = true) } },
-                    label = { Text("One-Piece / Dress") }
+                    label = { Text("Dress / one-piece") }
                 )
             }
         }
@@ -399,7 +386,7 @@ fun OutfitCanvasScreen(
         if (!canvasState.useOnePieceMode) {
             item {
                 CanvasSlotCarousel(
-                    title = "1. Top / Knitwear",
+                    title = "Top",
                     items = tops,
                     selectedId = canvasState.selectedTopId,
                     onSelect = { id ->
@@ -411,7 +398,7 @@ fun OutfitCanvasScreen(
             }
             item {
                 CanvasSlotCarousel(
-                    title = "2. Trousers / Skirt",
+                    title = "Bottom",
                     items = bottoms,
                     selectedId = canvasState.selectedBottomId,
                     onSelect = { id ->
@@ -424,7 +411,7 @@ fun OutfitCanvasScreen(
         } else {
             item {
                 CanvasSlotCarousel(
-                    title = "1. Dress / Jumpsuit",
+                    title = "Dress / one-piece",
                     items = onePieces,
                     selectedId = canvasState.selectedOnePieceId,
                     onSelect = { id ->
@@ -438,7 +425,7 @@ fun OutfitCanvasScreen(
 
         item {
             CanvasSlotCarousel(
-                title = "3. Outerwear / Weather Layer (Optional)",
+                title = "Outerwear (optional)",
                 items = outerwearList,
                 selectedId = canvasState.selectedOuterwearId,
                 onSelect = { id ->
@@ -451,7 +438,7 @@ fun OutfitCanvasScreen(
 
         item {
             CanvasSlotCarousel(
-                title = "4. Footwear",
+                title = "Shoes",
                 items = footwearList,
                 selectedId = canvasState.selectedFootwearId,
                 onSelect = { id ->
@@ -464,7 +451,7 @@ fun OutfitCanvasScreen(
 
         item {
             CanvasSlotCarousel(
-                title = "5. Finishing Accessory (Optional)",
+                title = "Accessory (optional)",
                 items = accessories,
                 selectedId = canvasState.selectedAccessoryId,
                 onSelect = { id ->
@@ -490,7 +477,7 @@ fun OutfitCanvasScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Finalize Studio Look",
+                        text = "Save this look",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -498,8 +485,8 @@ fun OutfitCanvasScreen(
                     OutlinedTextField(
                         value = canvasState.outfitTitle,
                         onValueChange = { title -> onUpdateCanvas { it.copy(outfitTitle = title) } },
-                        label = { Text("Look Title") },
-                        placeholder = { Text("e.g., Autumn Gallery Opening") },
+                        label = { Text("Name") },
+                        placeholder = { Text("e.g. Weekend coffee") },
                         singleLine = true,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -524,7 +511,7 @@ fun OutfitCanvasScreen(
                             onClick = {
                                 if (selectedIds.isNotEmpty()) {
                                     val name = canvasState.outfitTitle.trim().ifBlank {
-                                        "${canvasState.selectedOccasion} Studio Look"
+                                        "${canvasState.selectedOccasion} Look"
                                     }
                                     onWearCanvasNow(selectedIds, name, canvasState.selectedOccasion)
                                 }
@@ -534,7 +521,7 @@ fun OutfitCanvasScreen(
                         ) {
                             Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Wear Today")
+                            Text("Wearing today")
                         }
 
                         Button(
@@ -546,7 +533,7 @@ fun OutfitCanvasScreen(
                         ) {
                             Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Save Look")
+                            Text("Save")
                         }
                     }
                 }

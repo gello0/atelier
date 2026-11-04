@@ -38,6 +38,13 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.example.ui.components.ExpandableNote
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -138,24 +145,24 @@ fun TodayStylistScreen(
                     ) {
                         Column {
                             Text(
-                                text = "AI Weather Stylist",
+                                text = "Outfit ideas",
                                 style = MaterialTheme.typography.headlineSmall
                             )
                             Text(
-                                text = "Curates looks from your ${closetItems.size} closet pieces for the active forecast",
+                                text = "From your ${closetItems.size} items, for the selected day's weather",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Icon(
                             imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = "AI Stylist",
+                            contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
 
                     Text(
-                        text = "Select Occasion",
+                        text = "Occasion",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -187,7 +194,7 @@ fun TodayStylistScreen(
                                 strokeWidth = 2.dp
                             )
                             Spacer(modifier = Modifier.width(10.dp))
-                            Text("Styling from your closet...")
+                            Text("Putting outfits together…")
                         } else {
                             Icon(
                                 imageVector = Icons.Default.AutoAwesome,
@@ -195,7 +202,7 @@ fun TodayStylistScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Curate Looks for This Weather")
+                            Text("Suggest outfits")
                         }
                     }
 
@@ -221,7 +228,7 @@ fun TodayStylistScreen(
         if (aiOutfitState is AiTaskState.Success) {
             item {
                 Text(
-                    text = "AI Curated Looks for $selectedOccasion",
+                    text = "Ideas for $selectedOccasion",
                     style = MaterialTheme.typography.headlineSmall
                 )
             }
@@ -250,7 +257,7 @@ fun TodayStylistScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Saved Lookbook (${savedOutfits.size})",
+                    text = "Saved outfits (${savedOutfits.size})",
                     style = MaterialTheme.typography.headlineSmall
                 )
             }
@@ -279,7 +286,7 @@ fun TodayStylistScreen(
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Generate AI weather recommendations above or compose custom looks in the Studio tab.",
+                            text = "Save a suggestion above, or build your own look in the Studio tab.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -327,11 +334,11 @@ private fun EmptyClosetWelcomeCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "Start Your Digital Closet",
+                text = "Add your clothes",
                 style = MaterialTheme.typography.headlineSmall
             )
             Text(
-                text = "Your cloud closet is currently empty. Add your own clothes with AI Photo Auto-Tagging, or load our 10-piece Editorial Starter Capsule to immediately test weather-based outfit styling.",
+                text = "Your closet is empty. Add photos of your clothes, or try the app with some sample items.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -355,7 +362,7 @@ private fun EmptyClosetWelcomeCard(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Loading...")
                     } else {
-                        Text("Load Starter Capsule")
+                        Text("Sample items")
                     }
                 }
                 OutlinedButton(
@@ -417,7 +424,7 @@ private fun AiSuggestionCard(
                     color = MaterialTheme.colorScheme.secondaryContainer
                 ) {
                     Text(
-                        text = "${suggestion.weatherComfortScore}% Match",
+                        text = "${suggestion.weatherComfortScore}%",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -427,26 +434,12 @@ private fun AiSuggestionCard(
 
             OutfitStudioFlatLayCollage(items = matchedItems)
 
-            if (suggestion.stylistRationale.isNotBlank()) {
-                Text(
-                    text = suggestion.stylistRationale,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-            if (suggestion.layeringTip.isNotBlank()) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Stylist Tip: ${suggestion.layeringTip}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(10.dp)
-                    )
-                }
-            }
+            ExpandableNote(
+                text = listOf(suggestion.stylistRationale, suggestion.layeringTip).filter { it.isNotBlank() }.joinToString("
+
+"),
+                label = "Why this works"
+            )
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -458,7 +451,7 @@ private fun AiSuggestionCard(
                 ) {
                     Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Save Look")
+                    Text("Save")
                 }
                 Button(
                     onClick = onWearToday,
@@ -466,7 +459,7 @@ private fun AiSuggestionCard(
                 ) {
                     Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Wear Today")
+                    Text("Wearing today")
                 }
             }
         }
@@ -483,6 +476,16 @@ private fun SavedOutfitCard(
 ) {
     val matchedItems = outfit.itemIds.mapNotNull { id ->
         closetItems.firstOrNull { it.id == id }
+    }
+    var confirmDelete by remember { mutableStateOf(false) }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete \"${outfit.name}\"?") },
+            text = { Text("The outfit is removed. Your clothes stay in your closet.") },
+            confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } }
+        )
     }
 
     Card(
@@ -512,19 +515,6 @@ private fun SavedOutfitCard(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
-                        if (outfit.isAiGenerated) {
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer
-                            ) {
-                                Text(
-                                    text = "AI",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
                     }
                     Text(
                         text = "${outfit.occasion} · ${outfit.targetWeatherSummary.ifBlank { "All Seasons" }} · Worn ${outfit.wearCount}x",
@@ -541,7 +531,7 @@ private fun SavedOutfitCard(
                             tint = if (outfit.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(onClick = onDelete) {
+                    IconButton(onClick = { confirmDelete = true }) {
                         Icon(
                             imageVector = Icons.Default.DeleteOutline,
                             contentDescription = "Delete Outfit",
@@ -555,13 +545,7 @@ private fun SavedOutfitCard(
                 OutfitStudioFlatLayCollage(items = matchedItems)
             }
 
-            if (outfit.stylistNotes.isNotBlank()) {
-                Text(
-                    text = outfit.stylistNotes,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            ExpandableNote(text = outfit.stylistNotes)
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -582,7 +566,7 @@ private fun SavedOutfitCard(
                 OutlinedButton(onClick = onWearToday) {
                     Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Log Worn Today")
+                    Text("Wearing today")
                 }
             }
         }

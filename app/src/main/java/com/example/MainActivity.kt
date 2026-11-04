@@ -74,11 +74,14 @@ import com.example.auth.signOutFromAtelier
 import com.example.data.ai.AiStylistService
 import com.example.data.model.ClosetItem
 import com.example.data.repository.ClosetRepository
+import com.example.data.settings.AppSettings
 import com.example.data.weather.WeatherRepository
 import com.example.ui.AtelierViewModel
 import com.example.ui.DataUiState
 import com.example.ui.components.CitySearchDialog
 import com.example.ui.screens.AddEditItemDialog
+import com.example.ui.screens.ApiKeysContent
+import com.example.ui.screens.ApiKeysDialog
 import com.example.ui.screens.CalendarHistoryScreen
 import com.example.ui.screens.ClosetScreen
 import com.example.ui.screens.OutfitCanvasScreen
@@ -90,7 +93,6 @@ import com.example.util.configureAppCheck
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
-import com.google.firebase.firestore.FirebaseFirestore
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -105,7 +107,11 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    AtelierRootNavigation()
+                    if (FirebaseBootstrap.isReady()) {
+                        AtelierRootNavigation()
+                    } else {
+                        ApiKeysContent(onClose = null, setupMessage = FirebaseBootstrap.setupProblem)
+                    }
                 }
             }
         }
@@ -152,12 +158,13 @@ fun AtelierAuthenticatedShell(
                 val app = checkNotNull(this[APPLICATION_KEY]) {
                     "APPLICATION_KEY missing from CreationExtras"
                 }
-                val databaseId = app.getString(R.string.firestore_database_id)
-                val db = FirebaseFirestore.getInstance(databaseId)
+                val settings = AppSettings.get(app)
                 AtelierViewModel(
-                    closetRepository = ClosetRepository(db),
+                    appContext = app.applicationContext,
+                    settings = settings,
+                    closetRepository = ClosetRepository(app),
                     weatherRepository = WeatherRepository(),
-                    aiStylistService = AiStylistService(),
+                    aiStylistService = AiStylistService(settings),
                     currentUserId = currentUserId
                 )
             }
@@ -179,6 +186,7 @@ fun AtelierAuthenticatedShell(
     val vtonResultState by viewModel.vtonResultState.collectAsStateWithLifecycle()
     val preferFastLiteModel by viewModel.preferFastLiteModel.collectAsStateWithLifecycle()
     val autoFallbackOnHighDemand by viewModel.autoFallbackOnHighDemand.collectAsStateWithLifecycle()
+    val aiStudioPhotos by viewModel.aiStudioPhotos.collectAsStateWithLifecycle()
     val backgroundAiJobsCount by viewModel.backgroundAiJobsCount.collectAsStateWithLifecycle()
     val backgroundAiStatusText by viewModel.backgroundAiStatusText.collectAsStateWithLifecycle()
     val analyzingItemIds by viewModel.analyzingItemIds.collectAsStateWithLifecycle()
@@ -192,6 +200,7 @@ fun AtelierAuthenticatedShell(
     var showCitySearchDialog by rememberSaveable { mutableStateOf(false) }
     var showAddEditDialog by rememberSaveable { mutableStateOf(false) }
     var itemBeingEdited by remember { mutableStateOf<ClosetItem?>(null) }
+    var showApiKeys by rememberSaveable { mutableStateOf(false) }
 
     BackHandler(enabled = currentTab != AtelierTab.TODAY) {
         currentTab = AtelierTab.TODAY
@@ -268,7 +277,7 @@ fun AtelierAuthenticatedShell(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "AI Active ($backgroundAiJobsCount)",
+                                        text = "Working",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
@@ -456,14 +465,16 @@ fun AtelierAuthenticatedShell(
                                     showAddEditDialog = true
                                 },
                                 onBatchUploadPhotos = viewModel::batchUploadGarmentPhotos,
-                                onRunAiOnItems = viewModel::runAiAutoDetectOnClosetItems,
-                                onRunAiOnSingleItem = viewModel::autoDetectSingleClosetItemInBackground,
+                                onFillInPending = viewModel::runAiAutoDetectOnClosetItems,
+                                onCleanUpAllPhotos = viewModel::enhanceAllPhotos,
+                                onRefreshDetails = viewModel::autoDetectSingleClosetItemInBackground,
+                                onRedoPhoto = viewModel::enhanceItemPhoto,
                                 onEditItem = { item ->
                                     itemBeingEdited = item
                                     showAddEditDialog = true
                                 },
                                 onToggleFavorite = viewModel::toggleClosetItemFavorite,
-                                onDeleteItem = viewModel::deleteClosetItem,
+                                onDeleteItems = viewModel::deleteClosetItems,
                                 onSeedStarterCapsule = viewModel::seedStarterWardrobe
                             )
 
@@ -513,24 +524,27 @@ fun AtelierAuthenticatedShell(
                                 val wearLogsCount = (wearLogsState as? DataUiState.Success)?.data?.size ?: 0
                                 SettingsScreen(
                                     userDisplayName = userDisplayName,
-                                    userId = currentUserId,
                                     closetCount = closetCount,
                                     outfitsCount = outfitsCount,
                                     wearLogsCount = wearLogsCount,
                                     useFahrenheit = useFahrenheit,
                                     preferFastLiteModel = preferFastLiteModel,
                                     autoFallbackOnHighDemand = autoFallbackOnHighDemand,
-                                    backgroundAiJobsCount = backgroundAiJobsCount,
+                                    aiStudioPhotos = aiStudioPhotos,
+                                    engineLabel = remember(showApiKeys) { AiStylistService(AppSettings.get(context)).engineLabel },
                                     vtonUserPhoto = vtonUserPhoto,
                                     vtonFitNotes = vtonFitNotes,
                                     isSeedingCapsule = isSeedingCapsule,
                                     onToggleTempUnit = viewModel::toggleTemperatureUnit,
                                     onSetPreferFastLiteModel = viewModel::setPreferFastLiteModel,
                                     onSetAutoFallbackOnHighDemand = viewModel::setAutoFallbackOnHighDemand,
+                                    onSetAiStudioPhotos = viewModel::setAiStudioPhotos,
                                     onSetVtonUserPhoto = viewModel::setVtonUserPhoto,
                                     onSetVtonFitNotes = viewModel::setVtonFitNotes,
                                     onOpenCitySearch = { showCitySearchDialog = true },
+                                    onOpenApiKeys = { showApiKeys = true },
                                     onSeedStarterCapsule = viewModel::seedStarterWardrobe,
+                                    onDeleteAllData = viewModel::deleteAllData,
                                     onSignOut = {
                                         signOutFromAtelier(
                                             credentialManager = credentialManager,
@@ -567,28 +581,27 @@ fun AtelierAuthenticatedShell(
             materialScanState = materialScanState,
             onAnalyzePhoto = viewModel::analyzeGarmentPhoto,
             onScanMaterialLabel = viewModel::scanMaterialCompositionLabel,
-            onSaveAndAutoTagInBackground = { garmentBmp, materialBmp, draft ->
-                viewModel.saveGarmentAndAutoTagInBackground(
-                    garmentBitmap = garmentBmp,
-                    materialLabelBitmap = materialBmp,
+            onResetPhotoTagState = viewModel::resetPhotoTagState,
+            onSave = { newPhoto, labelPhoto, draft, fillDetails ->
+                viewModel.saveGarment(
+                    newPhoto = newPhoto,
+                    materialLabelBitmap = labelPhoto,
                     draftItem = draft,
+                    fillDetails = fillDetails,
                     onImmediateDismiss = {
                         showAddEditDialog = false
                         itemBeingEdited = null
                     }
                 )
             },
-            onResetPhotoTagState = viewModel::resetPhotoTagState,
-            onSave = { item ->
-                viewModel.saveClosetItem(item) {
-                    showAddEditDialog = false
-                    itemBeingEdited = null
-                }
-            },
             onDismiss = {
                 showAddEditDialog = false
                 itemBeingEdited = null
             }
         )
+    }
+
+    if (showApiKeys) {
+        ApiKeysDialog(onDismiss = { showApiKeys = false })
     }
 }
