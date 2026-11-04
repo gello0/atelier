@@ -435,9 +435,7 @@ private fun AiSuggestionCard(
             OutfitStudioFlatLayCollage(items = matchedItems)
 
             ExpandableNote(
-                text = listOf(suggestion.stylistRationale, suggestion.layeringTip).filter { it.isNotBlank() }.joinToString("
-
-"),
+                text = listOf(suggestion.stylistRationale, suggestion.layeringTip).filter { it.isNotBlank() }.joinToString("\n\n"),
                 label = "Why this works"
             )
 
