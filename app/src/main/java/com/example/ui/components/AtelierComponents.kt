@@ -566,6 +566,7 @@ fun WeatherHeroCard(
     onToggleUnit: () -> Unit,
     onOpenCitySearch: () -> Unit,
     onRefreshGps: () -> Unit,
+    onRetry: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val activeForecast: DailyWeatherForecast? = weatherSnapshot?.dailyForecasts?.getOrNull(selectedDayIndex)
@@ -604,7 +605,7 @@ fun WeatherHeroCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
-                        TextButton(onClick = onOpenCitySearch) { Text("Choose city") }
+                        TextButton(onClick = onRetry, modifier = Modifier.testTag("retry_weather_button")) { Text("Retry") }
                     }
                     else -> {
                         Icon(

@@ -15,7 +15,7 @@ import com.example.data.model.ClosetItem
 import com.example.data.model.GarmentCategory
 import com.example.data.model.Outfit
 import com.example.data.model.WearLog
-import com.example.data.repository.ClosetRepository
+import com.example.data.repository.ClosetDataSource
 import com.example.data.settings.AppSettings
 import com.example.data.weather.CityLocation
 import com.example.data.weather.DailyWeatherForecast
@@ -75,7 +75,7 @@ data class CanvasSelectionState(
 class AtelierViewModel(
     private val appContext: Context,
     private val settings: AppSettings,
-    private val closetRepository: ClosetRepository,
+    private val closetRepository: ClosetDataSource,
     private val weatherRepository: WeatherRepository,
     private val aiStylistService: AiStylistService,
     private val currentUserId: String
@@ -275,11 +275,20 @@ class AtelierViewModel(
                 },
                 onFailure = { error ->
                     _weatherState.value = DataUiState.Error(
-                        error.localizedMessage ?: "Couldn't load the weather for ${city.name}."
+                        if (error is java.io.IOException) {
+                            "Couldn't load the weather. Check your internet connection."
+                        } else {
+                            "Couldn't load the weather for ${city.name}."
+                        }
                     )
                 }
             )
         }
+    }
+
+    /** Loads the weather again for the last city used. */
+    fun retryWeather() {
+        loadWeatherForCity(settings.lastCity ?: PRESET_CITIES.first())
     }
 
     fun refreshFromDeviceGps(context: Context, showFailureBanner: Boolean = true) {
@@ -319,7 +328,7 @@ class AtelierViewModel(
             return
         }
         if (snapshot == null || activeDay == null) {
-            _aiOutfitState.value = AiTaskState.Error("Wait for the weather to load first.")
+            _aiOutfitState.value = AiTaskState.Error("The weather isn't loaded yet. Tap Retry in the weather bar at the top.")
             return
         }
         viewModelScope.launch {

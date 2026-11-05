@@ -45,6 +45,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
+import kotlinx.coroutines.tasks.await
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -74,6 +76,7 @@ import com.example.auth.signOutFromAtelier
 import com.example.data.ai.AiStylistService
 import com.example.data.model.ClosetItem
 import com.example.data.repository.ClosetRepository
+import com.example.data.repository.LocalClosetRepository
 import com.example.data.settings.AppSettings
 import com.example.data.weather.WeatherRepository
 import com.example.ui.AtelierViewModel
@@ -127,7 +130,13 @@ enum class AtelierTab(val label: String, val icon: ImageVector, val tag: String)
 }
 
 @Composable
-fun AtelierRootNavigation(auth: FirebaseAuth = Firebase.auth) {
+fun AtelierRootNavigation() {
+    if (BuildConfig.LOCAL_ONLY) {
+        // Phone-only build: no account, the closet lives on this phone.
+        AtelierAuthenticatedShell(currentUserId = "local", userDisplayName = "This phone")
+        return
+    }
+    val auth: FirebaseAuth = Firebase.auth
     val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
     val user = currentUser
 
@@ -162,7 +171,7 @@ fun AtelierAuthenticatedShell(
                 AtelierViewModel(
                     appContext = app.applicationContext,
                     settings = settings,
-                    closetRepository = ClosetRepository(app),
+                    closetRepository = if (BuildConfig.LOCAL_ONLY) LocalClosetRepository(app) else ClosetRepository(app),
                     weatherRepository = WeatherRepository(),
                     aiStylistService = AiStylistService(settings),
                     currentUserId = currentUserId
@@ -285,20 +294,22 @@ fun AtelierAuthenticatedShell(
                             }
                         }
 
-                        IconButton(
-                            onClick = {
-                                signOutFromAtelier(
-                                    credentialManager = credentialManager,
-                                    onSignOutComplete = { },
-                                    scope = scope
+                        if (!BuildConfig.LOCAL_ONLY) {
+                            IconButton(
+                                onClick = {
+                                    signOutFromAtelier(
+                                        credentialManager = credentialManager,
+                                        onSignOutComplete = { },
+                                        scope = scope
+                                    )
+                                },
+                                modifier = Modifier.testTag("sign_out_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Logout,
+                                    contentDescription = "Sign Out"
                                 )
-                            },
-                            modifier = Modifier.testTag("sign_out_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Logout,
-                                contentDescription = "Sign Out"
-                            )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -428,6 +439,7 @@ fun AtelierAuthenticatedShell(
                                 onSelectForecastDay = viewModel::selectForecastDay,
                                 onToggleTempUnit = viewModel::toggleTemperatureUnit,
                                 onOpenCitySearch = { showCitySearchDialog = true },
+                                onRetryWeather = viewModel::retryWeather,
                                 onRefreshGps = {
                                     locationPermissionLauncher.launch(
                                         arrayOf(

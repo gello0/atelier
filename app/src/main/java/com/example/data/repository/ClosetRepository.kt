@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDate
 
-class ClosetRepository(private val db: FirebaseFirestore) {
+class ClosetRepository(private val db: FirebaseFirestore) : ClosetDataSource {
 
     constructor(context: Context) : this(firestoreFor(context))
 
@@ -50,7 +50,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
             ?: throw IllegalStateException("User must be signed in with Google before accessing Firestore.")
     }
 
-    fun observeClosetItems(userId: String = auth.currentUser?.uid.orEmpty()): Flow<List<ClosetItem>> = flow {
+    override fun observeClosetItems(userId: String): Flow<List<ClosetItem>> = flow {
         val targetUid = userId.ifBlank { auth.currentUser?.uid.orEmpty() }
         val path = "users/$targetUid/closetItems"
         emitAll(
@@ -70,7 +70,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         )
     }
 
-    fun observeOutfits(userId: String = auth.currentUser?.uid.orEmpty()): Flow<List<Outfit>> = flow {
+    override fun observeOutfits(userId: String): Flow<List<Outfit>> = flow {
         val targetUid = userId.ifBlank { auth.currentUser?.uid.orEmpty() }
         val path = "users/$targetUid/outfits"
         emitAll(
@@ -90,7 +90,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         )
     }
 
-    fun observeWearLogs(userId: String = auth.currentUser?.uid.orEmpty()): Flow<List<WearLog>> = flow {
+    override fun observeWearLogs(userId: String): Flow<List<WearLog>> = flow {
         val targetUid = userId.ifBlank { auth.currentUser?.uid.orEmpty() }
         val path = "users/$targetUid/wearLogs"
         emitAll(
@@ -124,7 +124,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun addClosetItem(item: ClosetItem): Result<String> = runCatching {
+    override suspend fun addClosetItem(item: ClosetItem): Result<String> = runCatching {
         val uid = requireUserId()
         val colRef = db.collection("users").document(uid).collection("closetItems")
         val docRef = if (item.id.isNotBlank()) colRef.document(item.id) else colRef.document()
@@ -160,7 +160,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun updateClosetItem(item: ClosetItem): Result<Unit> = runCatching {
+    override suspend fun updateClosetItem(item: ClosetItem): Result<Unit> = runCatching {
         val uid = requireUserId()
         require(item.id.isNotBlank()) { "Item ID must not be blank for update" }
         val docRef = db.collection("users").document(uid).collection("closetItems").document(item.id)
@@ -193,7 +193,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun toggleClosetItemFavorite(itemId: String, isFavorite: Boolean): Result<Unit> = runCatching {
+    override suspend fun toggleClosetItemFavorite(itemId: String, isFavorite: Boolean): Result<Unit> = runCatching {
         val uid = requireUserId()
         val docRef = db.collection("users").document(uid).collection("closetItems").document(itemId)
         try {
@@ -211,7 +211,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun deleteClosetItem(itemId: String): Result<Unit> = runCatching {
+    override suspend fun deleteClosetItem(itemId: String): Result<Unit> = runCatching {
         val uid = requireUserId()
         val docRef = db.collection("users").document(uid).collection("closetItems").document(itemId)
         try {
@@ -224,7 +224,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun addOutfit(outfit: Outfit): Result<String> = runCatching {
+    override suspend fun addOutfit(outfit: Outfit): Result<String> = runCatching {
         val uid = requireUserId()
         require(outfit.itemIds.isNotEmpty()) { "Outfit must contain at least one closet item" }
         val colRef = db.collection("users").document(uid).collection("outfits")
@@ -254,7 +254,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun toggleOutfitFavorite(outfitId: String, isFavorite: Boolean): Result<Unit> = runCatching {
+    override suspend fun toggleOutfitFavorite(outfitId: String, isFavorite: Boolean): Result<Unit> = runCatching {
         val uid = requireUserId()
         val docRef = db.collection("users").document(uid).collection("outfits").document(outfitId)
         try {
@@ -272,7 +272,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun deleteOutfit(outfitId: String): Result<Unit> = runCatching {
+    override suspend fun deleteOutfit(outfitId: String): Result<Unit> = runCatching {
         val uid = requireUserId()
         val docRef = db.collection("users").document(uid).collection("outfits").document(outfitId)
         try {
@@ -289,7 +289,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
      * Logs a worn outfit and bumps wear counts in ONE atomic batch, so the log and the counts
      * can't drift apart. [itemIds] must be items that still exist.
      */
-    suspend fun logOutfitWear(
+    override suspend fun logOutfitWear(
         dateIso: String,
         outfitId: String,
         outfitName: String,
@@ -297,8 +297,8 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         occasion: String,
         weatherTempC: Double,
         weatherCondition: String,
-        notes: String = "",
-        outfitExists: Boolean = outfitId.isNotBlank()
+        notes: String,
+        outfitExists: Boolean
     ): Result<String> = runCatching {
         val uid = requireUserId()
         val ids = itemIds.distinct().take(12)
@@ -358,11 +358,11 @@ class ClosetRepository(private val db: FirebaseFirestore) {
      * Deletes a wear log and rolls the counts back. [itemUpdates] maps each still-existing item to
      * its corrected (wearCount, lastWornEpochDay); [outfitWearCount] is the outfit's corrected count.
      */
-    suspend fun deleteWearLog(
+    override suspend fun deleteWearLog(
         logId: String,
-        itemUpdates: Map<String, Pair<Long, Long>> = emptyMap(),
-        outfitId: String = "",
-        outfitWearCount: Long? = null
+        itemUpdates: Map<String, Pair<Long, Long>>,
+        outfitId: String,
+        outfitWearCount: Long?
     ): Result<Unit> = runCatching {
         val uid = requireUserId()
         val userRef = db.collection("users").document(uid)
@@ -399,7 +399,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
      * Deletes closet items and fixes the outfits that used them: the items are removed from each
      * outfit, and outfits left empty are deleted. Wear history is kept.
      */
-    suspend fun deleteClosetItems(itemIds: Collection<String>, outfits: List<Outfit>): Result<Unit> = runCatching {
+    override suspend fun deleteClosetItems(itemIds: Collection<String>, outfits: List<Outfit>): Result<Unit> = runCatching {
         val uid = requireUserId()
         val userRef = db.collection("users").document(uid)
         val removing = itemIds.toSet()
@@ -418,7 +418,7 @@ class ClosetRepository(private val db: FirebaseFirestore) {
     }
 
     /** Deletes every closet item, outfit and wear log for the signed-in user. */
-    suspend fun deleteAllUserData(): Result<Int> = runCatching {
+    override suspend fun deleteAllUserData(): Result<Int> = runCatching {
         val uid = requireUserId()
         val userRef = db.collection("users").document(uid)
         var total = 0
@@ -454,164 +454,9 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         return base64
     }
 
-    suspend fun seedStarterCapsuleWardrobe(): Result<Int> = runCatching {
+    override suspend fun seedStarterCapsuleWardrobe(): Result<Int> = runCatching {
         val uid = requireUserId()
-        val starterItems = listOf(
-            ClosetItem(
-                userId = uid,
-                name = "Sand Gabardine Trench Coat",
-                category = GarmentCategory.OUTERWEAR.name,
-                subCategory = "Trench Coat",
-                materialComposition = "100% Water-Repellent Cotton Gabardine",
-                colorName = "Warm Sand",
-                colorHex = "#D2B48C",
-                warmthLevel = 4,
-                isRainResistant = true,
-                isWindResistant = true,
-                occasions = listOf("Work", "Casual", "Evening"),
-                seasons = listOf("Spring", "Autumn", "Winter"),
-                notes = "Storm-flap double-breasted cotton gabardine, water-repellent finish.",
-                isFavorite = true
-            ),
-            ClosetItem(
-                userId = uid,
-                name = "Espresso Merino Rollneck",
-                category = GarmentCategory.TOP.name,
-                subCategory = "Knit Sweater",
-                materialComposition = "100% Extra-Fine Merino Wool",
-                colorName = "Espresso",
-                colorHex = "#3D2B1F",
-                warmthLevel = 4,
-                isRainResistant = false,
-                isWindResistant = false,
-                occasions = listOf("Work", "Casual", "Evening"),
-                seasons = listOf("Autumn", "Winter"),
-                notes = "Fine-gauge extra-fine merino wool, ideal base or mid-layer."
-            ),
-            ClosetItem(
-                userId = uid,
-                name = "Crisp Ivory Poplin Shirt",
-                category = GarmentCategory.TOP.name,
-                subCategory = "Button-Down Shirt",
-                materialComposition = "100% Organic Cotton Poplin",
-                colorName = "Ivory",
-                colorHex = "#F5F0E6",
-                warmthLevel = 2,
-                isRainResistant = false,
-                isWindResistant = false,
-                occasions = listOf("Work", "Casual", "Formal"),
-                seasons = listOf("Spring", "Summer", "Autumn", "Winter"),
-                notes = "Organic cotton poplin with relaxed architectural cuff.",
-                isFavorite = true
-            ),
-            ClosetItem(
-                userId = uid,
-                name = "Sage Linen Relaxed Tee",
-                category = GarmentCategory.TOP.name,
-                subCategory = "T-Shirt",
-                materialComposition = "100% European Flax Linen",
-                colorName = "Sage Olive",
-                colorHex = "#6B8E78",
-                warmthLevel = 1,
-                isRainResistant = false,
-                isWindResistant = false,
-                occasions = listOf("Casual", "Active", "Travel"),
-                seasons = listOf("Spring", "Summer"),
-                notes = "Breathable high-twist linen jersey for warm humid days."
-            ),
-            ClosetItem(
-                userId = uid,
-                name = "Charcoal Pleated Wool Trousers",
-                category = GarmentCategory.BOTTOM.name,
-                subCategory = "Tailored Trousers",
-                materialComposition = "98% Virgin Wool, 2% Elastane",
-                colorName = "Charcoal",
-                colorHex = "#36393B",
-                warmthLevel = 3,
-                isRainResistant = false,
-                isWindResistant = true,
-                occasions = listOf("Work", "Evening", "Formal"),
-                seasons = listOf("Spring", "Autumn", "Winter"),
-                notes = "Drape-weight virgin wool with double front pleats.",
-                isFavorite = true
-            ),
-            ClosetItem(
-                userId = uid,
-                name = "Ecru Selvedge Straight Denim",
-                category = GarmentCategory.BOTTOM.name,
-                subCategory = "Jeans",
-                materialComposition = "100% Cotton 13oz Selvedge Denim",
-                colorName = "Ecru Cream",
-                colorHex = "#EAE3D2",
-                warmthLevel = 3,
-                isRainResistant = false,
-                isWindResistant = true,
-                occasions = listOf("Casual", "Travel"),
-                seasons = listOf("Spring", "Summer", "Autumn"),
-                notes = "13oz Japanese selvedge denim."
-            ),
-            ClosetItem(
-                userId = uid,
-                name = "Terracotta Silk Midi Slip Dress",
-                category = GarmentCategory.ONE_PIECE.name,
-                subCategory = "Midi Dress",
-                materialComposition = "100% Mulberry Silk Crepe",
-                colorName = "Terracotta",
-                colorHex = "#C85A32",
-                warmthLevel = 2,
-                isRainResistant = false,
-                isWindResistant = false,
-                occasions = listOf("Evening", "Casual", "Formal"),
-                seasons = listOf("Spring", "Summer", "Autumn"),
-                notes = "Bias-cut matte silk; layer under knitwear or blazer in cooler weather."
-            ),
-            ClosetItem(
-                userId = uid,
-                name = "Obsidian Weatherproof Chelsea Boots",
-                category = GarmentCategory.FOOTWEAR.name,
-                subCategory = "Leather Boots",
-                materialComposition = "Treated Full-Grain Calfskin & Rubber Sole",
-                colorName = "Obsidian Black",
-                colorHex = "#1C1917",
-                warmthLevel = 4,
-                isRainResistant = true,
-                isWindResistant = true,
-                occasions = listOf("Work", "Casual", "Evening", "Travel"),
-                seasons = listOf("Autumn", "Winter", "Spring"),
-                notes = "Storm-welted calfskin with lugged rubber sole for wet pavement.",
-                isFavorite = true
-            ),
-            ClosetItem(
-                userId = uid,
-                name = "Warm Tan Suede Penny Loafers",
-                category = GarmentCategory.FOOTWEAR.name,
-                subCategory = "Loafers",
-                materialComposition = "100% Unlined Italian Calf Suede",
-                colorName = "Cognac Tan",
-                colorHex = "#9A6344",
-                warmthLevel = 2,
-                isRainResistant = false,
-                isWindResistant = false,
-                occasions = listOf("Work", "Casual", "Evening"),
-                seasons = listOf("Spring", "Summer", "Autumn"),
-                notes = "Unlined Italian suede, best for dry mild or warm days."
-            ),
-            ClosetItem(
-                userId = uid,
-                name = "Oatmeal Cashmere Wrap Scarf",
-                category = GarmentCategory.ACCESSORY.name,
-                subCategory = "Scarf",
-                materialComposition = "100% Scottish Brushed Cashmere",
-                colorName = "Oatmeal",
-                colorHex = "#D8CFC2",
-                warmthLevel = 5,
-                isRainResistant = false,
-                isWindResistant = true,
-                occasions = listOf("Work", "Casual", "Travel", "Evening"),
-                seasons = listOf("Autumn", "Winter"),
-                notes = "Brushed Scottish cashmere blanket scarf."
-            )
-        )
+        val starterItems = starterCapsuleItems(uid)
         val createdIds = mutableListOf<String>()
         for (item in starterItems) {
             val id = addClosetItem(item).getOrThrow()

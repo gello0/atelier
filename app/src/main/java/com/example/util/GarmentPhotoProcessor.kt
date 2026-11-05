@@ -97,7 +97,8 @@ object GarmentPhotoProcessor {
         val confidence = segment(work)
         val cut = withContext(Dispatchers.Default) {
             when {
-                confidence != null -> refineCutout(work, confidence, garmentColor(item.colorHex))
+                // The colour is only trusted once the details were filled in (before that it is a pixel guess).
+                confidence != null -> refineCutout(work, confidence, if (item.isPendingAiAnalysis()) null else garmentColor(item.colorHex))
                 isRender -> ImageUtils.plainBackgroundToAlpha(work)
                 else -> null
             }
@@ -143,6 +144,9 @@ object GarmentPhotoProcessor {
         null
     }
 
+    private fun luma(c: Int): Float =
+        0.299f * ((c shr 16) and 0xFF) + 0.587f * ((c shr 8) and 0xFF) + 0.114f * (c and 0xFF)
+
     private fun colorDist(a: Int, b: Int): Float {
         val dr = ((a shr 16) and 0xFF) - ((b shr 16) and 0xFF)
         val dg = ((a shr 8) and 0xFF) - ((b shr 8) and 0xFF)
@@ -160,7 +164,11 @@ object GarmentPhotoProcessor {
         val n = w * h
         // Far from the garment's own colour = not garment (e.g. a white sheet under black trousers).
         // Same-colour backgrounds (white shirt on white sheet) are never touched by this.
-        fun looksLikeBackground(c: Int): Boolean = colorDist(c, garment) > 150f
+        // Only for dark garments on a lighter surface (e.g. black trousers on a white sheet). Light or
+        // mid-tone garments have shadows and folds that would be mistaken for background.
+        val garmentLum = luma(garment)
+        if (garmentLum > 90) return
+        fun looksLikeBackground(c: Int): Boolean = luma(c) > garmentLum + 90 && colorDist(c, garment) > 150f
 
         val removed = BooleanArray(n)
         val queue = IntArray(n)

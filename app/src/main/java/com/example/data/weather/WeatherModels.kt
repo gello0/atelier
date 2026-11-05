@@ -39,7 +39,9 @@ data class WeatherSnapshot(
     val dailyForecasts: List<DailyWeatherForecast>
 )
 
+/** The first city is the default until the phone's location or a searched city is used. */
 val PRESET_CITIES = listOf(
+    CityLocation("Berlin", "Germany", 52.5200, 13.4050),
     CityLocation("New York", "United States", 40.7128, -74.0060),
     CityLocation("London", "United Kingdom", 51.5074, -0.1278),
     CityLocation("Paris", "France", 48.8566, 2.3522),

@@ -76,6 +76,7 @@ fun TodayStylistScreen(
     onToggleTempUnit: () -> Unit,
     onOpenCitySearch: () -> Unit,
     onRefreshGps: () -> Unit,
+    onRetryWeather: () -> Unit,
     onSelectOccasion: (String) -> Unit,
     onGenerateAiOutfits: () -> Unit,
     onSaveAiSuggestion: (AiOutfitSuggestion) -> Unit,
@@ -109,7 +110,8 @@ fun TodayStylistScreen(
                 onSelectDay = onSelectForecastDay,
                 onToggleUnit = onToggleTempUnit,
                 onOpenCitySearch = onOpenCitySearch,
-                onRefreshGps = onRefreshGps
+                onRefreshGps = onRefreshGps,
+                onRetry = onRetryWeather
             )
         }
 
