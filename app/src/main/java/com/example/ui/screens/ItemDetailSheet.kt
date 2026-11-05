@@ -64,6 +64,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.model.ClosetItem
+import com.example.data.model.needsWash
+import com.example.data.model.washAfterWears
 import com.example.ui.components.GarmentVisualThumbnail
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -80,7 +82,10 @@ fun ItemDetailSheet(
     onRedoPhoto: () -> Unit,
     onRefreshDetails: () -> Unit,
     onRotatePhoto: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    wearsSinceWash: Int = 0,
+    onWearToday: () -> Unit = {},
+    onMarkWashed: () -> Unit = {}
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var showFullPhoto by remember { mutableStateOf(false) }
@@ -183,7 +188,27 @@ fun ItemDetailSheet(
             }
             Text(worn, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
+            val washLimit = washAfterWears(item.categoryEnum())
+            if (washLimit > 0) {
+                val dirty = needsWash(item, wearsSinceWash)
+                Text(
+                    when {
+                        dirty -> "Needs washing · worn $wearsSinceWash× since the last wash"
+                        wearsSinceWash > 0 -> "Worn $wearsSinceWash× since the last wash"
+                        item.lastWashedEpochDay > 0 -> "Clean · washed " +
+                            LocalDate.ofEpochDay(item.lastWashedEpochDay).format(DateTimeFormatter.ofPattern("d MMM"))
+                        else -> "Clean"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (dirty) androidx.compose.ui.graphics.Color(0xFFE8A55A) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             Spacer(Modifier.height(4.dp))
+            androidx.compose.material3.Button(onClick = onWearToday, modifier = Modifier.fillMaxWidth()) { Text("I wore this today") }
+            if (washLimit > 0 && wearsSinceWash > 0) {
+                FilledTonalButton(onClick = onMarkWashed, modifier = Modifier.fillMaxWidth()) { Text("Mark as washed") }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick = onDelete, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp))

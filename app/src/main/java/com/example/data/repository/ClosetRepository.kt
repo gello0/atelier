@@ -181,7 +181,9 @@ class ClosetRepository(private val db: FirebaseFirestore) : ClosetDataSource {
             "wearCount" to item.wearCount.coerceAtLeast(0L),
             "lastWornEpochDay" to item.lastWornEpochDay.coerceAtLeast(0L),
             "isFavorite" to item.isFavorite,
-            "updatedAt" to FieldValue.serverTimestamp()
+            "updatedAt" to FieldValue.serverTimestamp(),
+            *(if (item.lastWashedEpochDay > 0L) arrayOf<Pair<String, Any>>("lastWashedEpochDay" to item.lastWashedEpochDay)
+              else arrayOf<Pair<String, Any>>())
         )
         try {
             docRef.update(updates).await()

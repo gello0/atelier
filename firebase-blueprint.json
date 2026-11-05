@@ -70,6 +70,10 @@
           "type": "integer",
           "description": "Epoch day when last worn (0 if never worn)."
         },
+        "lastWashedEpochDay": {
+          "type": "integer",
+          "description": "Epoch day when last marked as washed (absent or 0 if never)."
+        },
         "isFavorite": {
           "type": "boolean",
           "description": "Whether the item is marked as a wardrobe favorite."
