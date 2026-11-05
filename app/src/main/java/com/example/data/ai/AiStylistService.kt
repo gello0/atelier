@@ -76,10 +76,18 @@ class AiStylistService(private val settings: AppSettings) {
 
     private fun engine(): GeminiEngine {
         val key = settings.geminiApiKey
-        return if (key.isNotBlank()) RestGeminiEngine(key) else FirebaseGeminiEngine()
+        if (key.isNotBlank()) return RestGeminiEngine(key)
+        if (com.example.BuildConfig.LOCAL_ONLY) {
+            throw IllegalStateException("Add your Gemini API key in Settings \u2192 API keys & models.")
+        }
+        return FirebaseGeminiEngine()
     }
 
-    val engineLabel: String get() = engine().label
+    val engineLabel: String get() = try {
+        engine().label
+    } catch (e: Exception) {
+        "no Gemini key yet"
+    }
 
     /** Text models to try, in order. */
     private fun textModels(): List<String> {
@@ -103,7 +111,7 @@ class AiStylistService(private val settings: AppSettings) {
         // Skip models that recently hit their quota, unless that would leave nothing to try.
         val usable = models.filter { (skipUntil[it] ?: 0L) < now }.ifEmpty { models }
         for (model in usable) {
-            for (attempt in 0..1) {
+            for (attempt in 0..2) {
                 try {
                     return withTimeout(timeoutMs) { block(engine, model) }
                 } catch (e: TimeoutCancellationException) {
@@ -118,7 +126,7 @@ class AiStylistService(private val settings: AppSettings) {
                     last = e
                 }
                 Log.w(TAG, "Model $model attempt ${attempt + 1} failed: ${last?.message}")
-                if (attempt == 0) delay(1500L)
+                if (attempt < 2) delay(if (attempt == 0) 1500L else 5000L)
             }
         }
         throw last ?: GeminiException("The AI service is unavailable.", retryable = true)

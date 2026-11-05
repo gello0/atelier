@@ -49,6 +49,7 @@ android {
   buildTypes {
     release {
       buildConfigField("boolean", "USE_FIREBASE_EMULATORS", "false")
+      buildConfigField("boolean", "LOCAL_ONLY", "false")
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -60,6 +61,7 @@ android {
       // Local-only switches in local.properties (never set in AI Studio):
       //  atelier.devApp=true       -> installs as a separate "….dev" app next to the AI Studio build
       //  atelier.useEmulators=true -> talks to local Firebase emulators, adds "Continue without sign-in"
+      //  atelier.localOnly=true    -> phone-only: no Firebase, no sign-in, closet stored on the phone
       if (localProps.getProperty("atelier.devApp") == "true") {
         applicationIdSuffix = ".dev"
       }
@@ -67,6 +69,11 @@ android {
         "boolean",
         "USE_FIREBASE_EMULATORS",
         (localProps.getProperty("atelier.useEmulators") == "true").toString()
+      )
+      buildConfigField(
+        "boolean",
+        "LOCAL_ONLY",
+        (localProps.getProperty("atelier.localOnly") == "true").toString()
       )
       // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
       // AI Studio.

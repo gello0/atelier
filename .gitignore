@@ -22,3 +22,6 @@ debug.keystore
 app/src/debug/res/values/firebase_local.xml
 app/src/debug/res/values/local_keys.xml
 app/src/debug/res/values/strings.xml
+
+Atelier-Dev-phone.apk
+Atelier-Dev-nosignin.apk

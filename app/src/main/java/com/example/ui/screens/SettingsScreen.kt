@@ -228,12 +228,21 @@ fun SettingsScreen(
 
         // Account
         item {
-            SettingsCard("Account") {
-                Text("Signed in as $userDisplayName", style = MaterialTheme.typography.bodyMedium)
-                Button(onClick = onSignOut, modifier = Modifier.fillMaxWidth().testTag("settings_sign_out_button")) {
-                    Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Sign out")
+            if (com.example.BuildConfig.LOCAL_ONLY) {
+                SettingsCard("Storage") {
+                    Text(
+                        "Your closet is stored on this phone only. It isn't backed up, and uninstalling the app deletes it.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            } else {
+                SettingsCard("Account") {
+                    Text("Signed in as $userDisplayName", style = MaterialTheme.typography.bodyMedium)
+                    Button(onClick = onSignOut, modifier = Modifier.fillMaxWidth().testTag("settings_sign_out_button")) {
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Sign out")
+                    }
                 }
             }
         }
