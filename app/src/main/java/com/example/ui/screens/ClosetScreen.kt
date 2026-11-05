@@ -110,8 +110,10 @@ fun ClosetScreen(
     onBatchUploadPhotos: (List<Uri>) -> Unit,
     onFillInPending: (List<ClosetItem>) -> Unit,
     onCleanUpAllPhotos: () -> Unit,
+    onFixAll: (Set<String>?) -> Unit,
     onRefreshDetails: (ClosetItem) -> Unit,
     onRedoPhoto: (ClosetItem) -> Unit,
+    onRotatePhoto: (ClosetItem) -> Unit,
     onEditItem: (ClosetItem) -> Unit,
     onToggleFavorite: (ClosetItem) -> Unit,
     onDeleteItems: (Set<String>) -> Unit,
@@ -196,6 +198,7 @@ fun ClosetScreen(
                             }
                             Text("${liveSelection.size} selected", color = TextPrimary, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                             TextButton(onClick = { selection = filteredItems.map { it.id }.toSet() }) { Text("Select all") }
+                            TextButton(onClick = { onFixAll(liveSelection); selection = emptySet() }) { Text("Fix") }
                             IconButton(onClick = { confirmDelete = liveSelection }, modifier = Modifier.testTag("delete_selected_button")) {
                                 Icon(Icons.Default.DeleteOutline, contentDescription = "Delete selected", tint = Color(0xFFE07A5F))
                             }
@@ -274,6 +277,13 @@ fun ClosetScreen(
                                         batchPhotoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                                     }
                                 )
+                                if (allItems.isNotEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("Fix all (names, details, rotation)") },
+                                        onClick = { showMenu = false; onFixAll(null) },
+                                        modifier = Modifier.testTag("fix_all_button")
+                                    )
+                                }
                                 if (rawPhotoCount > 0) {
                                     DropdownMenuItem(
                                         text = { Text("Clean up photos ($rawPhotoCount)") },
@@ -461,6 +471,7 @@ fun ClosetScreen(
             onToggleFavorite = { onToggleFavorite(detailItem) },
             onRedoPhoto = { onRedoPhoto(detailItem) },
             onRefreshDetails = { onRefreshDetails(detailItem) },
+            onRotatePhoto = { onRotatePhoto(detailItem) },
             onDelete = { confirmDelete = setOf(detailItem.id) }
         )
     }

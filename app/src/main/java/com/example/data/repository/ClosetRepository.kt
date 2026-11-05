@@ -27,9 +27,18 @@ class ClosetRepository(private val db: FirebaseFirestore) {
 
     companion object {
         /** Firestore for the database id in Settings (or the bundled one). */
+        private val emulatorWired = mutableSetOf<String>()
+
         fun firestoreFor(context: Context): FirebaseFirestore {
             val dbId = AppSettings.get(context).effectiveFirestoreDatabaseId()
-            return if (dbId == "(default)") FirebaseFirestore.getInstance() else FirebaseFirestore.getInstance(dbId)
+            val db = if (dbId == "(default)") FirebaseFirestore.getInstance() else FirebaseFirestore.getInstance(dbId)
+            // Local test mode: use the Firestore emulator (reached through `adb reverse tcp:8085 tcp:8085`).
+            if (com.example.BuildConfig.USE_FIREBASE_EMULATORS) {
+                synchronized(emulatorWired) {
+                    if (emulatorWired.add(dbId)) db.useEmulator("127.0.0.1", 8085)
+                }
+            }
+            return db
         }
     }
 

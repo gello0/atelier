@@ -33,6 +33,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -245,6 +246,19 @@ fun SignInScreen(
                         fontWeight = FontWeight.Bold
                     )
                 }
+            }
+
+            if (com.example.BuildConfig.USE_FIREBASE_EMULATORS) {
+                OutlinedButton(
+                    onClick = {
+                        errorMessage = null
+                        isLoading = true
+                        com.google.firebase.auth.FirebaseAuth.getInstance().signInAnonymously()
+                            .addOnSuccessListener { isLoading = false; onAuthSuccess() }
+                            .addOnFailureListener { isLoading = false; errorMessage = it.localizedMessage ?: "Test sign-in failed." }
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("test_mode_sign_in_button")
+                ) { Text("Continue without sign-in (test mode)") }
             }
 
             TextButton(onClick = { showApiKeys = true }, modifier = Modifier.testTag("sign_in_api_keys_button")) {

@@ -33,7 +33,9 @@ data class GarmentAiAnalysis(
     val occasions: List<String>,
     val seasons: List<String>,
     /** Short shop-style description, stored in ClosetItem.notes. */
-    val notes: String
+    val notes: String,
+    /** Degrees to rotate the photo clockwise so the item is upright: 0, 90, 180 or 270. */
+    val rotationDegrees: Int = 0
 )
 
 data class MaterialScanResult(
@@ -62,6 +64,16 @@ data class OutfitComfortEvaluation(
 
 class AiStylistService(private val settings: AppSettings) {
 
+    /** Set once the image model says it isn't in the key's plan, so we stop asking this session. */
+    @Volatile
+    private var imageModelUnavailable: String? = null
+
+    /** Models that hit a quota recently -> time until which they are skipped. */
+    private val skipUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** Why product-style photos / try-on can't run right now, or null if they can. */
+    val imageModelProblem: String? get() = imageModelUnavailable
+
     private fun engine(): GeminiEngine {
         val key = settings.geminiApiKey
         return if (key.isNotBlank()) RestGeminiEngine(key) else FirebaseGeminiEngine()
@@ -87,7 +99,10 @@ class AiStylistService(private val settings: AppSettings) {
     ): T {
         val engine = engine()
         var last: Exception? = null
-        for (model in models) {
+        val now = System.currentTimeMillis()
+        // Skip models that recently hit their quota, unless that would leave nothing to try.
+        val usable = models.filter { (skipUntil[it] ?: 0L) < now }.ifEmpty { models }
+        for (model in usable) {
             for (attempt in 0..1) {
                 try {
                     return withTimeout(timeoutMs) { block(engine, model) }
@@ -97,7 +112,8 @@ class AiStylistService(private val settings: AppSettings) {
                     throw e
                 } catch (e: GeminiException) {
                     last = e
-                    if (!e.retryable) break
+                    if (e.rateLimited) skipUntil[model] = System.currentTimeMillis() + 15 * 60_000L
+                    if (!e.retryable || e.rateLimited) break
                 } catch (e: Exception) {
                     last = e
                 }
@@ -206,8 +222,46 @@ class AiStylistService(private val settings: AppSettings) {
             isWindResistant = json.optBoolean("isWindResistant", false),
             occasions = stringList(json.optJSONArray("occasions"), ALLOWED_OCCASIONS).ifEmpty { listOf("Casual") },
             seasons = stringList(json.optJSONArray("seasons"), ALLOWED_SEASONS).ifEmpty { listOf("Spring", "Autumn") },
-            notes = description.trim().take(300)
+            notes = description.trim().take(300),
+            rotationDegrees = 0
         )
+    }
+
+    // ------------------------------------------------------------------ orientation
+
+    private val orientationSchema = JSONObject(
+        """{"type": "OBJECT", "properties": {"upright": {"type": "STRING", "enum": ["A", "B", "C", "D"]}}, "required": ["upright"]}"""
+    )
+
+    /**
+     * Degrees to rotate [photo] clockwise so the item is upright (0/90/180/270). Shows the model
+     * the photo in all four orientations as labelled panels and asks which one is upright, which
+     * is far more reliable than asking it to reason about rotation directly. Returns 0 on failure.
+     */
+    suspend fun detectUprightRotation(photo: Bitmap): Int {
+        return try {
+            val grid = ImageUtils.orientationGrid(photo)
+            val prompt = "These 4 panels (A, B, C, D) show the SAME clothing photo rotated in different directions. " +
+                "Which panel shows the item upright, the way it would appear in a shop photo? " +
+                "Upright means: shirts, t-shirts, kurtas, jackets and dresses have the collar or neckline at " +
+                "the top and the hem at the bottom; trousers, shorts and skirts have the waistband at the top " +
+                "and the leg openings at the bottom; shoes stand on their soles. " +
+                "Return JSON {\"upright\": \"A\" | \"B\" | \"C\" | \"D\"}."
+            val raw = withFallback(textModels(), timeoutMs = 45_000L) { engine, model ->
+                engine.generateJson(model, prompt, listOf(grid), orientationSchema, temperature = 0f)
+            }
+            when (extractJsonObject(raw).optString("upright").trim().uppercase()) {
+                "B" -> 90
+                "C" -> 180
+                "D" -> 270
+                else -> 0
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Orientation check failed: ${e.message}")
+            0
+        }
     }
 
     // ------------------------------------------------------------------ care label
@@ -259,6 +313,7 @@ class AiStylistService(private val settings: AppSettings) {
      * With no photo, draws one from the item's details. Returns null if the image model fails.
      */
     suspend fun renderStudioPhoto(photo: Bitmap?, item: ClosetItem): Bitmap? {
+        if (imageModelUnavailable != null) return null
         return try {
             val details = listOf(item.colorName, item.materialComposition, item.subCategory.ifBlank { item.name })
                 .filter { it.isNotBlank() && !it.contains("Pending", true) && !it.contains("Analyzing", true) }
@@ -287,6 +342,7 @@ class AiStylistService(private val settings: AppSettings) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            if (e is GeminiException && e.notInPlan) imageModelUnavailable = e.message
             Log.w(TAG, "Studio photo render failed: ${e.message}")
             null
         }
@@ -302,6 +358,7 @@ class AiStylistService(private val settings: AppSettings) {
         fitNotes: String
     ): Result<Bitmap> = runCatchingAi {
         if (selectedItems.isEmpty()) throw IllegalStateException("Pick at least one item first.")
+        imageModelUnavailable?.let { throw IllegalStateException(it) }
         val garmentSummary = selectedItems.joinToString("; ") { item ->
             val mat = if (item.materialComposition.isNotBlank()) " in ${item.materialComposition}" else ""
             "${item.name} (${item.colorName}$mat)"
@@ -325,9 +382,14 @@ class AiStylistService(private val settings: AppSettings) {
             if (fitNotes.isNotBlank()) append(" Fit preference: $fitNotes.")
         }
         val images = listOfNotNull(person) + garmentBitmaps
-        withFallback(listOf(settings.imageModel), timeoutMs = 120_000L) { engine, model ->
-            engine.generateImage(model, prompt, images)
-                ?: throw GeminiException("No image was returned.", retryable = true)
+        try {
+            withFallback(listOf(settings.imageModel), timeoutMs = 120_000L) { engine, model ->
+                engine.generateImage(model, prompt, images)
+                    ?: throw GeminiException("No image was returned.", retryable = true)
+            }
+        } catch (e: GeminiException) {
+            if (e.notInPlan) imageModelUnavailable = e.message
+            throw e
         }
     }
 

@@ -79,6 +79,7 @@ fun ItemDetailSheet(
     onToggleFavorite: () -> Unit,
     onRedoPhoto: () -> Unit,
     onRefreshDetails: () -> Unit,
+    onRotatePhoto: () -> Unit,
     onDelete: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -138,6 +139,11 @@ fun ItemDetailSheet(
                             onClick = { menuOpen = false; onRedoPhoto() }
                         )
                         if (item.imageBase64.isNotBlank()) {
+                            DropdownMenuItem(
+                                text = { Text("Rotate photo") },
+                                enabled = !isBusy,
+                                onClick = { menuOpen = false; onRotatePhoto() }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Refresh details from photo") },
                                 enabled = !isBusy,

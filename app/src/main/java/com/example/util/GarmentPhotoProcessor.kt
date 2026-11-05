@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import android.util.Log
 import com.example.data.ai.AiStylistService
 import com.example.data.model.ClosetItem
+import android.content.Context
+import com.google.android.gms.common.moduleinstall.ModuleInstall
+import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions
@@ -28,6 +31,46 @@ object GarmentPhotoProcessor {
 
     /** Segmentation runs at this size; bigger = finer edges but slower. */
     private const val WORK_SIZE = 1536
+
+    @Volatile
+    private var appContext: Context? = null
+
+    /**
+     * Asks Google Play services to download the on-device segmentation model now, so it is ready
+     * by the time the first photo is added. Safe to call more than once.
+     */
+    fun warmUp(context: Context) {
+        appContext = context.applicationContext
+        try {
+            ModuleInstall.getClient(context.applicationContext)
+                .installModules(ModuleInstallRequest.newBuilder().addApi(segmenter).build())
+                .addOnFailureListener { Log.w(TAG, "Segmentation model download failed: ${it.message}") }
+        } catch (e: Exception) {
+            Log.w(TAG, "Segmentation model download not started: ${e.message}")
+        }
+    }
+
+    /** Waits (up to 2 minutes) for the segmentation model to finish downloading. */
+    private suspend fun awaitModule(): Boolean {
+        val ctx = appContext ?: return false
+        return try {
+            withTimeoutOrNull(120_000L) {
+                val client = ModuleInstall.getClient(ctx)
+                val available = client.areModulesAvailable(segmenter).await().areModulesAvailable()
+                if (!available) {
+                    client.installModules(ModuleInstallRequest.newBuilder().addApi(segmenter).build()).await()
+                    // installModules returns once the download is queued; poll until it is usable.
+                    while (!client.areModulesAvailable(segmenter).await().areModulesAvailable()) {
+                        kotlinx.coroutines.delay(2_000L)
+                    }
+                }
+                true
+            } ?: false
+        } catch (e: Exception) {
+            Log.w(TAG, "Waiting for segmentation model failed: ${e.message}")
+            false
+        }
+    }
 
     private val segmenter by lazy {
         SubjectSegmentation.getClient(
@@ -54,7 +97,7 @@ object GarmentPhotoProcessor {
         val confidence = segment(work)
         val cut = withContext(Dispatchers.Default) {
             when {
-                confidence != null -> refineCutout(work, confidence)
+                confidence != null -> refineCutout(work, confidence, garmentColor(item.colorHex))
                 isRender -> ImageUtils.plainBackgroundToAlpha(work)
                 else -> null
             }
@@ -70,6 +113,10 @@ object GarmentPhotoProcessor {
 
     /** Per-pixel foreground confidence (0..1) for [input], or null if ML Kit is unavailable. */
     private suspend fun segment(input: Bitmap): FloatArray? {
+        return segmentOnce(input) ?: if (awaitModule()) segmentOnce(input) else null
+    }
+
+    private suspend fun segmentOnce(input: Bitmap): FloatArray? {
         return try {
             withTimeoutOrNull(25_000L) {
                 val result = segmenter.process(InputImage.fromBitmap(input, 0)).await()
@@ -90,7 +137,86 @@ object GarmentPhotoProcessor {
     /**
      * Builds a clean RGBA cutout from the photo and ML Kit's confidence mask.
      */
-    internal fun refineCutout(src: Bitmap, confidence: FloatArray): Bitmap {
+    private fun garmentColor(hex: String): Int? = try {
+        if (Regex("^#[0-9a-fA-F]{6}$").matches(hex.trim())) android.graphics.Color.parseColor(hex.trim()) else null
+    } catch (e: Exception) {
+        null
+    }
+
+    private fun colorDist(a: Int, b: Int): Float {
+        val dr = ((a shr 16) and 0xFF) - ((b shr 16) and 0xFF)
+        val dg = ((a shr 8) and 0xFF) - ((b shr 8) and 0xFF)
+        val db = (a and 0xFF) - (b and 0xFF)
+        return kotlin.math.sqrt((dr * dr + dg * dg + db * db).toFloat())
+    }
+
+    /**
+     * When the segmentation mask swallowed part of the background (e.g. the whole bed under a pair of
+     * black trousers), removes background-coloured pixels that are connected to the mask's edge.
+     * Only runs when the garment colour clearly differs from the background, so white-on-white items
+     * are left alone.
+     */
+    private fun stripBackgroundBleed(px: IntArray, alpha: FloatArray, w: Int, h: Int, garment: Int) {
+        val n = w * h
+        // Far from the garment's own colour = not garment (e.g. a white sheet under black trousers).
+        // Same-colour backgrounds (white shirt on white sheet) are never touched by this.
+        fun looksLikeBackground(c: Int): Boolean = colorDist(c, garment) > 150f
+
+        val removed = BooleanArray(n)
+        val queue = IntArray(n)
+        var head = 0
+        var tail = 0
+        for (i in 0 until n) {
+            if (alpha[i] <= 0.5f) continue
+            val x = i % w
+            val y = i / w
+            val touchesOutside = x == 0 || y == 0 || x == w - 1 || y == h - 1 ||
+                alpha[i - 1] <= 0.5f || alpha[i + 1] <= 0.5f || alpha[i - w] <= 0.5f || alpha[i + w] <= 0.5f
+            if (touchesOutside && looksLikeBackground(px[i])) {
+                removed[i] = true
+                queue[tail++] = i
+            }
+        }
+        while (head < tail) {
+            val i = queue[head++]
+            val x = i % w
+            val y = i / w
+            if (x > 0) visit(i - 1, alpha, removed, px, queue, tail, ::looksLikeBackground).also { if (it) tail++ }
+            if (x < w - 1) visit(i + 1, alpha, removed, px, queue, tail, ::looksLikeBackground).also { if (it) tail++ }
+            if (y > 0) visit(i - w, alpha, removed, px, queue, tail, ::looksLikeBackground).also { if (it) tail++ }
+            if (y < h - 1) visit(i + w, alpha, removed, px, queue, tail, ::looksLikeBackground).also { if (it) tail++ }
+        }
+        var maskCount = 0
+        for (i in 0 until n) if (alpha[i] > 0.5f) maskCount++
+        val removedCount = tail
+        if (maskCount == 0) return
+        val share = removedCount.toFloat() / maskCount
+        // Small edge areas are probably prints or highlights on the garment itself: keep them.
+        // Removing nearly everything means the colour guess was wrong: keep the mask.
+        if (share < 0.08f || share > 0.85f) {
+            Log.d(TAG, "Background bleed check: ${(share * 100).toInt()}% (left as is)")
+            return
+        }
+        for (i in 0 until n) if (removed[i]) alpha[i] = 0f
+        Log.d(TAG, "Removed ${(share * 100).toInt()}% background bleed from the mask")
+    }
+
+    private inline fun visit(
+        j: Int,
+        alpha: FloatArray,
+        removed: BooleanArray,
+        px: IntArray,
+        queue: IntArray,
+        tail: Int,
+        isBackground: (Int) -> Boolean
+    ): Boolean {
+        if (removed[j] || alpha[j] <= 0.5f || !isBackground(px[j])) return false
+        removed[j] = true
+        queue[tail] = j
+        return true
+    }
+
+    internal fun refineCutout(src: Bitmap, confidence: FloatArray, garment: Int? = null): Bitmap {
         val w = src.width
         val h = src.height
         val n = w * h
@@ -99,15 +225,28 @@ object GarmentPhotoProcessor {
 
         // 1. Confidence -> alpha with a smooth ramp instead of a hard threshold.
         val alpha = FloatArray(n) { smoothstep(0.25f, 0.75f, confidence[it]) }
+        if (garment != null) stripBackgroundBleed(px, alpha, w, h, garment)
 
-        // 2. Drop stray specks: keep only blobs that are a meaningful size compared with the largest
-        //    (a pair of shoes stays two blobs).
+        // 1b. Remove thin strands (sheet wrinkles, threads) with a small morphological opening.
+        run {
+            val r = radius(w, 2)
+            val solid0 = BooleanArray(n) { alpha[it] > 0.5f }
+            val eroded = BooleanArray(n).also { e ->
+                val grownHoles = dilate(BooleanArray(n) { !solid0[it] }, w, h, r)
+                for (i in 0 until n) e[i] = !grownHoles[i]
+            }
+            val opened = dilate(eroded, w, h, r)
+            for (i in 0 until n) if (solid0[i] && !opened[i]) alpha[i] = 0f
+        }
+
+        // 2. Keep the main item: the largest blob plus any blob of similar size (a pair of shoes stays
+        //    two blobs), dropping specks and bits of other clothes at the edge of the photo.
         val solid = BooleanArray(n) { alpha[it] > 0.5f }
         val labels = IntArray(n)
         val sizes = labelComponents(solid, w, h, labels)
         val largest = sizes.maxOrNull() ?: 0
         if (largest == 0) return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val minKeep = max(64, (largest * 0.03f).toInt())
+        val minKeep = max(64, (largest * 0.35f).toInt())
         for (i in 0 until n) {
             val l = labels[i]
             if (l > 0 && sizes[l - 1] < minKeep) alpha[i] = 0f

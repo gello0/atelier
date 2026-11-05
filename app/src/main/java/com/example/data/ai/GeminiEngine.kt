@@ -21,15 +21,28 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 
 /** Error from the model service. [retryable] is true for overload / rate-limit / timeouts. */
-class GeminiException(message: String, val retryable: Boolean, cause: Throwable? = null) :
-    Exception(message, cause)
+class GeminiException(
+    message: String,
+    val retryable: Boolean,
+    cause: Throwable? = null,
+    /** Quota/rate limit hit: don't retry this model, go straight to the next one. */
+    val rateLimited: Boolean = false,
+    /** The model isn't available on this key's plan at all (e.g. image models on the free tier). */
+    val notInPlan: Boolean = false
+) : Exception(message, cause)
 
 /** One way of talking to Gemini: a user API key over REST, or Firebase AI Logic. */
 interface GeminiEngine {
     val label: String
 
     /** Returns the model's JSON text. [schema] is an OpenAPI-style schema (REST only). */
-    suspend fun generateJson(model: String, prompt: String, images: List<Bitmap>, schema: JSONObject?): String
+    suspend fun generateJson(
+        model: String,
+        prompt: String,
+        images: List<Bitmap>,
+        schema: JSONObject?,
+        temperature: Float? = null
+    ): String
 
     /** Returns the first image the model produced, or null. */
     suspend fun generateImage(model: String, prompt: String, images: List<Bitmap>): Bitmap?
@@ -47,10 +60,12 @@ class RestGeminiEngine(
         model: String,
         prompt: String,
         images: List<Bitmap>,
-        schema: JSONObject?
+        schema: JSONObject?,
+        temperature: Float?
     ): String {
         val config = JSONObject().put("responseMimeType", "application/json")
         if (schema != null) config.put("responseSchema", schema)
+        if (temperature != null) config.put("temperature", temperature.toDouble())
         val response = post(model, buildBody(prompt, images, config))
         val text = partsOf(response).mapNotNull { it.optString("text").takeIf { t -> t.isNotBlank() } }
             .joinToString("")
@@ -129,8 +144,14 @@ class RestGeminiEngine(
             http.newCall(request).execute().use { resp ->
                 val text = resp.body?.string().orEmpty()
                 if (!resp.isSuccessful) {
+                    if (resp.code == 429 && isNotInPlan(text)) {
+                        throw GeminiException(
+                            "$model isn't included in your Gemini plan (free tier). Turn on billing for this API key to use it.",
+                            retryable = false, rateLimited = true, notInPlan = true
+                        )
+                    }
                     val retryable = resp.code == 429 || resp.code >= 500
-                    throw GeminiException(errorMessage(resp.code, text), retryable)
+                    throw GeminiException(errorMessage(resp.code, text), retryable, rateLimited = resp.code == 429)
                 }
                 JSONObject(text)
             }
@@ -153,6 +174,25 @@ class RestGeminiEngine(
         val finish = response.optJSONArray("candidates")?.optJSONObject(0)?.optString("finishReason")
         if (!finish.isNullOrBlank() && finish != "STOP") return "The model stopped early ($finish)."
         return null
+    }
+
+    /** A free-tier quota with no limit value means the model isn't offered on this plan. */
+    private fun isNotInPlan(body: String): Boolean = try {
+        val details = JSONObject(body).optJSONObject("error")?.optJSONArray("details") ?: JSONArray()
+        var freeTier = false
+        var hasLimit = false
+        for (i in 0 until details.length()) {
+            val violations = details.optJSONObject(i)?.optJSONArray("violations") ?: continue
+            for (j in 0 until violations.length()) {
+                val v = violations.optJSONObject(j) ?: continue
+                if (v.optString("quotaId").contains("FreeTier")) freeTier = true
+                val value = v.optString("quotaValue")
+                if (value.isNotBlank() && value != "0") hasLimit = true
+            }
+        }
+        freeTier && !hasLimit
+    } catch (e: Exception) {
+        false
     }
 
     private fun errorMessage(code: Int, body: String): String {
@@ -197,11 +237,15 @@ class FirebaseGeminiEngine : GeminiEngine {
         model: String,
         prompt: String,
         images: List<Bitmap>,
-        schema: JSONObject?
+        schema: JSONObject?,
+        temperature: Float?
     ): String {
         val generative = Firebase.ai.generativeModel(
             modelName = model,
-            generationConfig = generationConfig { responseMimeType = "application/json" }
+            generationConfig = generationConfig {
+                responseMimeType = "application/json"
+                if (temperature != null) this.temperature = temperature
+            }
         )
         val response = try {
             generative.generateContent(
