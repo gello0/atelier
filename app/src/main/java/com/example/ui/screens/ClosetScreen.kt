@@ -50,6 +50,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -110,8 +112,10 @@ fun ClosetScreen(
     onBatchUploadPhotos: (List<Uri>) -> Unit,
     onFillInPending: (List<ClosetItem>) -> Unit,
     onCleanUpAllPhotos: () -> Unit,
+    onFixAll: (Set<String>?) -> Unit,
     onRefreshDetails: (ClosetItem) -> Unit,
     onRedoPhoto: (ClosetItem) -> Unit,
+    onRotatePhoto: (ClosetItem) -> Unit,
     onEditItem: (ClosetItem) -> Unit,
     onToggleFavorite: (ClosetItem) -> Unit,
     onDeleteItems: (Set<String>) -> Unit,
@@ -196,6 +200,7 @@ fun ClosetScreen(
                             }
                             Text("${liveSelection.size} selected", color = TextPrimary, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                             TextButton(onClick = { selection = filteredItems.map { it.id }.toSet() }) { Text("Select all") }
+                            TextButton(onClick = { onFixAll(liveSelection); selection = emptySet() }) { Text("Fix") }
                             IconButton(onClick = { confirmDelete = liveSelection }, modifier = Modifier.testTag("delete_selected_button")) {
                                 Icon(Icons.Default.DeleteOutline, contentDescription = "Delete selected", tint = Color(0xFFE07A5F))
                             }
@@ -274,6 +279,13 @@ fun ClosetScreen(
                                         batchPhotoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                                     }
                                 )
+                                if (allItems.isNotEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("Fix all (names, details, rotation)") },
+                                        onClick = { showMenu = false; onFixAll(null) },
+                                        modifier = Modifier.testTag("fix_all_button")
+                                    )
+                                }
                                 if (rawPhotoCount > 0) {
                                     DropdownMenuItem(
                                         text = { Text("Clean up photos ($rawPhotoCount)") },
@@ -330,6 +342,16 @@ fun ClosetScreen(
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                             singleLine = true,
                             shape = RoundedCornerShape(16.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary,
+                                cursorColor = TextPrimary,
+                                focusedPlaceholderColor = TextSecondary,
+                                unfocusedPlaceholderColor = TextSecondary,
+                                focusedLeadingIconColor = TextSecondary,
+                                unfocusedLeadingIconColor = TextSecondary,
+                                unfocusedBorderColor = StudioTileBorder
+                            ),
                             modifier = Modifier.fillMaxWidth().testTag("closet_search_input")
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -337,13 +359,27 @@ fun ClosetScreen(
                                 selected = filterRainOnly,
                                 onClick = { filterRainOnly = !filterRainOnly },
                                 leadingIcon = { Icon(Icons.Default.Umbrella, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                                label = { Text("Water-resistant") }
+                                label = { Text("Water-resistant") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    labelColor = TextPrimary,
+                                    iconColor = TextSecondary,
+                                    selectedContainerColor = StudioFabPurple,
+                                    selectedLabelColor = TextPrimary,
+                                    selectedLeadingIconColor = TextPrimary
+                                ),
                             )
                             FilterChip(
                                 selected = filterFavoritesOnly,
                                 onClick = { filterFavoritesOnly = !filterFavoritesOnly },
                                 leadingIcon = { Icon(Icons.Default.Favorite, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                                label = { Text("Favourites") }
+                                label = { Text("Favourites") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    labelColor = TextPrimary,
+                                    iconColor = TextSecondary,
+                                    selectedContainerColor = StudioFabPurple,
+                                    selectedLabelColor = TextPrimary,
+                                    selectedLeadingIconColor = TextPrimary
+                                ),
                             )
                         }
                     }
@@ -461,6 +497,7 @@ fun ClosetScreen(
             onToggleFavorite = { onToggleFavorite(detailItem) },
             onRedoPhoto = { onRedoPhoto(detailItem) },
             onRefreshDetails = { onRefreshDetails(detailItem) },
+            onRotatePhoto = { onRotatePhoto(detailItem) },
             onDelete = { confirmDelete = setOf(detailItem.id) }
         )
     }

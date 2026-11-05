@@ -80,7 +80,7 @@ fun CalendarHistoryScreen(
     }
 
     val mostWornPiece = remember(closetItems) {
-        closetItems.maxByOrNull { it.wearCount }
+        closetItems.filter { it.wearCount > 0 }.maxByOrNull { it.wearCount }
     }
     val rainReadyCount = remember(closetItems) {
         closetItems.count { it.isRainResistant }

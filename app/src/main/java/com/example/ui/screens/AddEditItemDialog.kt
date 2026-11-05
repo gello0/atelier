@@ -147,6 +147,7 @@ fun AddEditItemDialog(
             if (tag.occasions.isNotEmpty()) selectedOccasions = tag.occasions
             if (tag.seasons.isNotEmpty()) selectedSeasons = tag.seasons
             if (tag.notes.isNotBlank()) notes = tag.notes
+            if (tag.rotationDegrees != 0) newPhoto = newPhoto?.let { ImageUtils.rotateBitmapByDegrees(it, tag.rotationDegrees.toFloat()) }
             fillDetails = false
         }
     }

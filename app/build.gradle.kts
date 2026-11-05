@@ -10,6 +10,10 @@ plugins {
   alias(libs.plugins.google.services)
 }
 
+val localProps = Properties().apply {
+  rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
@@ -44,6 +48,7 @@ android {
 
   buildTypes {
     release {
+      buildConfigField("boolean", "USE_FIREBASE_EMULATORS", "false")
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -52,14 +57,17 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      // Local-only: with atelier.devApp=true in local.properties, debug builds install as a
-      // separate "….dev" app next to the AI Studio build. AI Studio builds are unaffected.
-      val localProps = Properties().apply {
-        rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
-      }
+      // Local-only switches in local.properties (never set in AI Studio):
+      //  atelier.devApp=true       -> installs as a separate "….dev" app next to the AI Studio build
+      //  atelier.useEmulators=true -> talks to local Firebase emulators, adds "Continue without sign-in"
       if (localProps.getProperty("atelier.devApp") == "true") {
         applicationIdSuffix = ".dev"
       }
+      buildConfigField(
+        "boolean",
+        "USE_FIREBASE_EMULATORS",
+        (localProps.getProperty("atelier.useEmulators") == "true").toString()
+      )
       // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
       // AI Studio.
       signingConfig = signingConfigs.getByName("debugConfig")

@@ -23,6 +23,7 @@ fun configureAppCheck(context: Context, intent: Intent?) {
         // project; a project entered in Settings uses its own App Check settings (if any).
         if (FirebaseApp.getApps(context).isEmpty()) return
         if (AppSettings.get(context).usesCustomFirebase()) return
+        if (BuildConfig.USE_FIREBASE_EMULATORS) return
 
         if (BuildConfig.DEBUG) {
             // Token from the launching intent (AI Studio), else one bundled into debug builds.

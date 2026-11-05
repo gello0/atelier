@@ -467,8 +467,10 @@ fun AtelierAuthenticatedShell(
                                 onBatchUploadPhotos = viewModel::batchUploadGarmentPhotos,
                                 onFillInPending = viewModel::runAiAutoDetectOnClosetItems,
                                 onCleanUpAllPhotos = viewModel::enhanceAllPhotos,
+                                onFixAll = viewModel::refreshAllItems,
                                 onRefreshDetails = viewModel::autoDetectSingleClosetItemInBackground,
                                 onRedoPhoto = viewModel::enhanceItemPhoto,
+                                onRotatePhoto = viewModel::rotateItemPhoto,
                                 onEditItem = { item ->
                                     itemBeingEdited = item
                                     showAddEditDialog = true

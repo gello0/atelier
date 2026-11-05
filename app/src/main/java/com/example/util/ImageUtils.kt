@@ -402,6 +402,32 @@ object ImageUtils {
         }
     }
 
+    /**
+     * 2x2 grid of the photo rotated 0/90/180/270 degrees clockwise, labelled A/B/C/D, used to ask
+     * the model which orientation is upright.
+     */
+    fun orientationGrid(source: Bitmap, cell: Int = 384): Bitmap {
+        val base = flattenOnWhite(scaleDownBitmap(source, cell - 16))
+        val out = Bitmap.createBitmap(cell * 2, cell * 2, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawColor(AndroidColor.WHITE)
+        val box = Paint().apply { color = AndroidColor.BLACK }
+        val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = AndroidColor.WHITE
+            textSize = 44f
+            isFakeBoldText = true
+        }
+        listOf("A" to 0f, "B" to 90f, "C" to 180f, "D" to 270f).forEachIndexed { i, (label, deg) ->
+            val r = rotateBitmapByDegrees(base, deg)
+            val x = (i % 2) * cell
+            val y = (i / 2) * cell
+            canvas.drawBitmap(r, x + (cell - r.width) / 2f, y + (cell - r.height) / 2f, null)
+            canvas.drawRect(x + 6f, y + 6f, x + 62f, y + 62f, box)
+            canvas.drawText(label, x + 18f, y + 50f, text)
+        }
+        return out
+    }
+
     /** Max base64 length for a stored photo (Firestore rules allow 120000). */
     const val MAX_IMAGE_CHARS = 115_000
 

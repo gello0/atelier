@@ -11,6 +11,11 @@ class AtelierApp : Application() {
     override fun onCreate() {
         super.onCreate()
         FirebaseBootstrap.initialize(this)
+        com.example.util.GarmentPhotoProcessor.warmUp(this)
+        if (BuildConfig.USE_FIREBASE_EMULATORS && FirebaseBootstrap.isReady()) {
+            // Local test mode: Auth emulator (reached through `adb reverse tcp:9099 tcp:9099`).
+            com.google.firebase.auth.FirebaseAuth.getInstance().useEmulator("127.0.0.1", 9099)
+        }
     }
 }
 

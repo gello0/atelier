@@ -472,8 +472,17 @@ class AtelierViewModel(
             jobStarted(if (fillDetails) "Adding details for ${displayName(item)}…" else "Cleaning up photo…")
             try {
                 var updated = item
+                var workPhoto = photo
+                var rotated = false
+                if (photo != null && (fillDetails || makeCutout)) {
+                    val turn = aiStylistService.detectUprightRotation(photo)
+                    if (turn != 0) {
+                        workPhoto = ImageUtils.rotateBitmapByDegrees(photo, turn.toFloat())
+                        rotated = true
+                    }
+                }
                 if (fillDetails && photo != null) {
-                    aiStylistService.analyzeGarmentPhoto(photo, labelPhoto, userTyped?.name.orEmpty()).fold(
+                    aiStylistService.analyzeGarmentPhoto(workPhoto ?: photo, labelPhoto, userTyped?.name.orEmpty()).fold(
                         onSuccess = { a ->
                             val typed = userTyped
                             updated = updated.copy(
@@ -508,14 +517,19 @@ class AtelierViewModel(
                     }
                 }
 
-                if (makeCutout || (photo == null && updated.imageBase64.isBlank())) {
+                if (makeCutout || rotated || (photo == null && updated.imageBase64.isBlank())) {
                     val cutout = GarmentPhotoProcessor.makeCutoutBase64(
-                        photo = photo,
+                        photo = workPhoto,
                         item = updated,
                         useAiStudioRender = settings.aiStudioPhotos,
                         ai = aiStylistService
                     )
-                    if (cutout != null) updated = updated.copy(imageBase64 = cutout)
+                    if (cutout != null) {
+                        updated = updated.copy(imageBase64 = cutout)
+                    } else if (rotated && workPhoto != null) {
+                        // No clean cutout, but at least store the photo the right way up.
+                        updated = updated.copy(imageBase64 = ImageUtils.encodeBitmapToBase64(workPhoto!!, maxDim = 1024, quality = 85))
+                    }
                 }
 
                 if (updated != item) {
@@ -607,6 +621,50 @@ class AtelierViewModel(
         }
         viewModelScope.launch {
             processItem(item.copy(name = item.name), bmp, null, fillDetails = true, makeCutout = false)
+        }
+    }
+
+    /**
+     * Fix all: re-reads every item's photo (or just [onlyIds]) and refreshes name, type, colour and
+     * description, straightens sideways photos and redoes low-res or raw photos as cutouts.
+     */
+    fun refreshAllItems(onlyIds: Set<String>? = null) {
+        val targets = currentItems.filter {
+            it.imageBase64.isNotBlank() && it.id !in _analyzingItemIds.value && (onlyIds == null || it.id in onlyIds)
+        }
+        if (targets.isEmpty()) {
+            showBanner("No items with photos to update.")
+            return
+        }
+        showBanner("Updating ${targets.size} item(s)…")
+        viewModelScope.launch {
+            targets.map { item ->
+                async {
+                    val bmp = ImageUtils.decodeBase64ToBitmap(item.imageBase64)
+                    processItem(
+                        item = item,
+                        photo = bmp,
+                        labelPhoto = null,
+                        fillDetails = true,
+                        makeCutout = ImageUtils.needsPhotoCleanup(item.imageBase64)
+                    )
+                }
+            }.awaitAll()
+            showBanner("Updated ${targets.size} item(s).")
+        }
+    }
+
+    /** Turns an item's photo 90 degrees clockwise (for the odd photo that comes out sideways). */
+    fun rotateItemPhoto(item: ClosetItem) {
+        if (item.id in _analyzingItemIds.value) return
+        val bmp = ImageUtils.decodeBase64ToBitmap(item.imageBase64) ?: return
+        viewModelScope.launch {
+            val turned = withContext(Dispatchers.Default) { ImageUtils.rotateBitmapByDegrees(bmp, 90f) }
+            val encoded = withContext(Dispatchers.Default) {
+                if (ImageUtils.isCutoutImage(item.imageBase64)) ImageUtils.encodeCutoutToBase64(turned)
+                else ImageUtils.encodeBitmapToBase64(turned, maxDim = 1024, quality = 85)
+            }
+            if (encoded.isNotBlank()) closetRepository.updateClosetItem(item.copy(imageBase64 = encoded))
         }
     }
 
