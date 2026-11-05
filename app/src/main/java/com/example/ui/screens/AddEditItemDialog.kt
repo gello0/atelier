@@ -208,6 +208,7 @@ fun AddEditItemDialog(
         imageBase64 = initialItem?.imageBase64.orEmpty(),
         wearCount = initialItem?.wearCount ?: 0L,
         lastWornEpochDay = initialItem?.lastWornEpochDay ?: 0L,
+        lastWashedEpochDay = initialItem?.lastWashedEpochDay ?: 0L,
         isFavorite = initialItem?.isFavorite ?: false,
         createdAt = initialItem?.createdAt
     )

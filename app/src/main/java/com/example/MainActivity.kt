@@ -489,7 +489,10 @@ fun AtelierAuthenticatedShell(
                                 },
                                 onToggleFavorite = viewModel::toggleClosetItemFavorite,
                                 onDeleteItems = viewModel::deleteClosetItems,
-                                onSeedStarterCapsule = viewModel::seedStarterWardrobe
+                                onSeedStarterCapsule = viewModel::seedStarterWardrobe,
+                                wearLogs = (wearLogsState as? DataUiState.Success)?.data.orEmpty(),
+                                onWearToday = viewModel::wearItemToday,
+                                onMarkWashed = viewModel::markItemsWashed
                             )
 
                             AtelierTab.STUDIO -> OutfitCanvasScreen(

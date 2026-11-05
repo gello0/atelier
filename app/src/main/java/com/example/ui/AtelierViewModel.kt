@@ -750,6 +750,36 @@ class AtelierViewModel(
         viewModelScope.launch { closetRepository.toggleClosetItemFavorite(item.id, !item.isFavorite) }
     }
 
+    /** "I wore this today" for a single piece: logs it in the wear history like an outfit of one. */
+    fun wearItemToday(item: ClosetItem) {
+        logWearForSuggestionOrOutfit(
+            outfitId = "",
+            outfitName = item.name,
+            itemIds = listOf(item.id),
+            occasion = item.occasions.firstOrNull() ?: "Casual"
+        )
+    }
+
+    /** Marks pieces as washed today, which resets their "wears since wash" count. */
+    fun markItemsWashed(itemIds: Set<String>) {
+        val today = LocalDate.now().toEpochDay()
+        val targets = currentItems.filter { it.id in itemIds }
+        if (targets.isEmpty()) return
+        viewModelScope.launch {
+            var failed = 0
+            for (item in targets) {
+                if (closetRepository.updateClosetItem(item.copy(lastWashedEpochDay = today)).isFailure) failed++
+            }
+            showBanner(
+                when {
+                    failed > 0 -> "Couldn't mark ${if (failed == 1) "one piece" else "$failed pieces"} as washed."
+                    targets.size == 1 -> "${displayName(targets.first())} marked as washed."
+                    else -> "${targets.size} pieces marked as washed."
+                }
+            )
+        }
+    }
+
     fun deleteClosetItem(itemId: String) = deleteClosetItems(setOf(itemId))
 
     /** Deletes items and removes them from saved outfits (outfits left empty are deleted too). */
@@ -918,15 +948,18 @@ class AtelierViewModel(
         val activeDay = activeWeatherForecast()
         val targetWarmth = activeDay?.recommendedWarmthLevel ?: 3
 
-        fun pickBestOrRandom(cat: GarmentCategory): String? {
-            val candidates = items.filter { it.category == cat.name }
+        fun pickBestOrRandom(cat: GarmentCategory, target: Int = targetWarmth): String? {
+            // Pieces that aren't recognised yet only have a guessed category (a jacket shows up as a
+            // "top"), so real pieces come first.
+            val recognised = items.filter { it.category == cat.name && !it.isPendingAiAnalysis() }
+            val candidates = recognised.ifEmpty { items.filter { it.category == cat.name } }
             if (candidates.isEmpty()) return null
             val weatherFiltered = if (activeDay?.isRainy == true) {
                 candidates.filter { it.isRainResistant }.ifEmpty { candidates }
             } else {
                 candidates
             }
-            return weatherFiltered.sortedBy { kotlin.math.abs(it.warmthLevel - targetWarmth) }.take(3).random().id
+            return weatherFiltered.sortedBy { kotlin.math.abs(it.warmthLevel - target) }.take(3).random().id
         }
 
         val outerwearId = if (targetWarmth >= 3 || activeDay?.isRainy == true || activeDay?.isWindy == true) {
@@ -936,7 +969,11 @@ class AtelierViewModel(
         }
         _canvasState.value = _canvasState.value.copy(
             useOnePieceMode = false,
-            selectedTopId = pickBestOrRandom(GarmentCategory.TOP),
+            // With a coat on top, the shirt underneath should be a lighter layer.
+            selectedTopId = pickBestOrRandom(
+                GarmentCategory.TOP,
+                if (outerwearId != null) (targetWarmth - 1).coerceIn(1, 3) else targetWarmth
+            ),
             selectedBottomId = pickBestOrRandom(GarmentCategory.BOTTOM),
             selectedOnePieceId = null,
             selectedOuterwearId = outerwearId,

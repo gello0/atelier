@@ -44,6 +44,8 @@ data class ClosetItem(
     val imageBase64: String = "",
     val wearCount: Long = 0L,
     val lastWornEpochDay: Long = 0L,
+    /** Epoch day of the last wash (0 = never marked as washed). */
+    val lastWashedEpochDay: Long = 0L,
     @get:PropertyName("isFavorite")
     @set:PropertyName("isFavorite")
     var isFavorite: Boolean = false,
@@ -104,3 +106,22 @@ data class WearLog(
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
+
+/** How many wears a piece takes before it should be washed; 0 means it isn't tracked (shoes, bags). */
+fun washAfterWears(category: GarmentCategory): Int = when (category) {
+    GarmentCategory.TOP, GarmentCategory.ONE_PIECE -> 2
+    GarmentCategory.BOTTOM -> 4
+    GarmentCategory.OUTERWEAR -> 8
+    else -> 0
+}
+
+/** Wears since the item was last washed, counted from the wear history. */
+fun wearsSinceWash(item: ClosetItem, logs: List<WearLog>): Int = logs.count { log ->
+    item.id in log.itemIds &&
+        (runCatching { java.time.LocalDate.parse(log.dateIso).toEpochDay() }.getOrDefault(0L) > item.lastWashedEpochDay)
+}
+
+fun needsWash(item: ClosetItem, wears: Int): Boolean {
+    val limit = washAfterWears(item.categoryEnum())
+    return limit > 0 && wears >= limit
+}

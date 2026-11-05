@@ -39,6 +39,7 @@ service cloud.firestore {
              data.imageBase64 is string && data.imageBase64.size() <= 120000 &&
              data.wearCount is int && data.wearCount >= 0 &&
              data.lastWornEpochDay is int && data.lastWornEpochDay >= 0 &&
+             (!('lastWashedEpochDay' in data) || (data.lastWashedEpochDay is int && data.lastWashedEpochDay >= 0)) &&
              data.isFavorite is bool &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
@@ -91,7 +92,7 @@ service cloud.firestore {
                          'userId', 'name', 'category', 'subCategory', 'materialComposition',
                          'colorName', 'colorHex', 'warmthLevel', 'isRainResistant',
                          'isWindResistant', 'occasions', 'seasons', 'notes', 'imageBase64',
-                         'wearCount', 'lastWornEpochDay', 'isFavorite', 'createdAt', 'updatedAt'
+                         'wearCount', 'lastWornEpochDay', 'lastWashedEpochDay', 'isFavorite', 'createdAt', 'updatedAt'
                        ]) &&
                        isValidClosetItem(incoming(), userId);
 
@@ -106,7 +107,7 @@ service cloud.firestore {
                          'name', 'category', 'subCategory', 'materialComposition',
                          'colorName', 'colorHex', 'warmthLevel', 'isRainResistant',
                          'isWindResistant', 'occasions', 'seasons', 'notes', 'imageBase64',
-                         'wearCount', 'lastWornEpochDay', 'isFavorite', 'updatedAt'
+                         'wearCount', 'lastWornEpochDay', 'lastWashedEpochDay', 'isFavorite', 'updatedAt'
                        ]);
 
       allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(itemId) && existing().userId == request.auth.uid;

@@ -120,12 +120,16 @@ fun ClosetScreen(
     onToggleFavorite: (ClosetItem) -> Unit,
     onDeleteItems: (Set<String>) -> Unit,
     onSeedStarterCapsule: () -> Unit,
+    wearLogs: List<com.example.data.model.WearLog> = emptyList(),
+    onWearToday: (ClosetItem) -> Unit = {},
+    onMarkWashed: (Set<String>) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<GarmentCategory?>(null) }
     var filterRainOnly by remember { mutableStateOf(false) }
     var filterFavoritesOnly by remember { mutableStateOf(false) }
+    var filterNeedsWash by remember { mutableStateOf(false) }
     var useGridView by remember { mutableStateOf(true) }
     var sortOrder by remember { mutableStateOf(ClosetSortOrder.MOST_RECENT) }
     var showSearchBar by remember { mutableStateOf(false) }
@@ -139,6 +143,11 @@ fun ClosetScreen(
     val pendingItems = remember(allItems) { allItems.filter { it.isPendingAiAnalysis() } }
     val rawPhotoCount = remember(allItems) { allItems.count { ImageUtils.needsPhotoCleanup(it.imageBase64) } }
     // Drop selections for items that no longer exist.
+    // Wears since each piece was last washed, from the wear history.
+    val washCounts = remember(allItems, wearLogs) { allItems.associate { it.id to com.example.data.model.wearsSinceWash(it, wearLogs) } }
+    val dirtyIds = remember(allItems, washCounts) {
+        allItems.filter { com.example.data.model.needsWash(it, washCounts[it.id] ?: 0) }.map { it.id }.toSet()
+    }
     val liveSelection = selection.filter { id -> allItems.any { it.id == id } }.toSet()
     val selecting = liveSelection.isNotEmpty()
 
@@ -146,7 +155,7 @@ fun ClosetScreen(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 50)
     ) { uris -> if (uris.isNotEmpty()) onBatchUploadPhotos(uris) }
 
-    val filteredItems = remember(allItems, searchQuery, selectedCategory, filterRainOnly, filterFavoritesOnly, sortOrder) {
+    val filteredItems = remember(allItems, searchQuery, selectedCategory, filterRainOnly, filterFavoritesOnly, filterNeedsWash, dirtyIds, sortOrder) {
         val base = allItems.filter { item ->
             val q = searchQuery.trim()
             val matchesQuery = q.isBlank() ||
@@ -158,7 +167,8 @@ fun ClosetScreen(
             matchesQuery &&
                 (selectedCategory == null || item.category == selectedCategory!!.name) &&
                 (!filterRainOnly || item.isRainResistant) &&
-                (!filterFavoritesOnly || item.isFavorite)
+                (!filterFavoritesOnly || item.isFavorite) &&
+                (!filterNeedsWash || item.id in dirtyIds)
         }
         when (sortOrder) {
             ClosetSortOrder.MOST_RECENT -> base.sortedByDescending { it.createdAt?.seconds ?: 0L }
@@ -381,6 +391,16 @@ fun ClosetScreen(
                                     selectedLeadingIconColor = TextPrimary
                                 ),
                             )
+                            FilterChip(
+                                selected = filterNeedsWash,
+                                onClick = { filterNeedsWash = !filterNeedsWash },
+                                label = { Text("Needs washing" + if (dirtyIds.isNotEmpty()) " (${dirtyIds.size})" else "") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    labelColor = TextPrimary,
+                                    selectedContainerColor = StudioFabPurple,
+                                    selectedLabelColor = TextPrimary
+                                ),
+                            )
                         }
                     }
                 }
@@ -446,6 +466,7 @@ fun ClosetScreen(
                                     item = item,
                                     isBusy = item.id in analyzingItemIds,
                                     isSelected = item.id in liveSelection,
+                                    needsWash = item.id in dirtyIds,
                                     selecting = selecting,
                                     onClick = { onItemTap(item) },
                                     onLongClick = { onItemLongPress(item) },
@@ -461,6 +482,7 @@ fun ClosetScreen(
                             item = item,
                             isBusy = item.id in analyzingItemIds,
                             isSelected = item.id in liveSelection,
+                            needsWash = item.id in dirtyIds,
                             onClick = { onItemTap(item) },
                             onLongClick = { onItemLongPress(item) },
                             onToggleFavorite = { onToggleFavorite(item) }
@@ -498,7 +520,10 @@ fun ClosetScreen(
             onRedoPhoto = { onRedoPhoto(detailItem) },
             onRefreshDetails = { onRefreshDetails(detailItem) },
             onRotatePhoto = { onRotatePhoto(detailItem) },
-            onDelete = { confirmDelete = setOf(detailItem.id) }
+            onDelete = { confirmDelete = setOf(detailItem.id) },
+            wearsSinceWash = washCounts[detailItem.id] ?: 0,
+            onWearToday = { onWearToday(detailItem) },
+            onMarkWashed = { onMarkWashed(setOf(detailItem.id)) }
         )
     }
 
@@ -527,6 +552,7 @@ private fun ClosetGridTile(
     item: ClosetItem,
     isBusy: Boolean,
     isSelected: Boolean,
+    needsWash: Boolean,
     selecting: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -545,6 +571,15 @@ private fun ClosetGridTile(
                     .clip(RoundedCornerShape(22.dp))
                     .background(Color(0x553F4590))
             )
+        }
+        if (needsWash && !selecting) {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xCC0E1116),
+                modifier = Modifier.align(Alignment.BottomStart).padding(6.dp)
+            ) {
+                Text("Wash", style = MaterialTheme.typography.labelSmall, color = Color(0xFFE8A55A), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+            }
         }
         when {
             selecting -> Surface(
@@ -572,6 +607,7 @@ private fun ClosetItemRow(
     item: ClosetItem,
     isBusy: Boolean,
     isSelected: Boolean,
+    needsWash: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onToggleFavorite: () -> Unit
@@ -610,7 +646,11 @@ private fun ClosetItemRow(
                     overflow = TextOverflow.Ellipsis
                 )
                 if (item.wearCount > 0) {
-                    Text("Worn ${item.wearCount}×", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                    Text(
+                        "Worn ${item.wearCount}×" + if (needsWash) " · needs washing" else "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (needsWash) Color(0xFFE8A55A) else TextSecondary
+                    )
                 }
             }
             if (isBusy) {

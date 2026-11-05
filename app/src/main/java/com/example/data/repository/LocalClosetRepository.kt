@@ -256,7 +256,7 @@ class LocalClosetRepository(context: Context) : ClosetDataSource {
         .put("warmthLevel", i.warmthLevel).put("isRainResistant", i.isRainResistant)
         .put("isWindResistant", i.isWindResistant).put("occasions", JSONArray(i.occasions))
         .put("seasons", JSONArray(i.seasons)).put("notes", i.notes).put("imageBase64", i.imageBase64)
-        .put("wearCount", i.wearCount).put("lastWornEpochDay", i.lastWornEpochDay)
+        .put("wearCount", i.wearCount).put("lastWornEpochDay", i.lastWornEpochDay).put("lastWashedEpochDay", i.lastWashedEpochDay)
         .put("isFavorite", i.isFavorite).put("createdAt", i.createdAt?.seconds ?: 0L)
 
     private fun itemFrom(o: JSONObject) = ClosetItem(
@@ -268,6 +268,7 @@ class LocalClosetRepository(context: Context) : ClosetDataSource {
         occasions = o.optJSONArray("occasions").strings(), seasons = o.optJSONArray("seasons").strings(),
         notes = o.optString("notes"), imageBase64 = o.optString("imageBase64"),
         wearCount = o.optLong("wearCount"), lastWornEpochDay = o.optLong("lastWornEpochDay"),
+        lastWashedEpochDay = o.optLong("lastWashedEpochDay"),
         isFavorite = o.optBoolean("isFavorite"), createdAt = ts(o.optLong("createdAt"))
     )
 
