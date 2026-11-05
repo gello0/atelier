@@ -470,7 +470,8 @@ class AiStylistService(private val settings: AppSettings) {
                 outfitName = o.optString("outfitName").ifBlank { "Today's Look" },
                 itemIds = ids,
                 occasion = o.optString("occasion").ifBlank { occasion },
-                weatherComfortScore = o.optInt("weatherComfortScore", 85).coerceIn(50, 100),
+                // Scored locally from warmth / rain / wind so it matches the Studio's comfort meter.
+                weatherComfortScore = evaluateOutfitComfort(closetItems.filter { it.id in ids }, weather).score,
                 stylistRationale = o.optString("stylistRationale"),
                 layeringTip = o.optString("layeringTip")
             )

@@ -36,14 +36,18 @@ abstract class FirestoreEmulatorTestBase {
         val resId = context.resources.getIdentifier("firestore_database_id", "string", context.packageName)
         databaseId = if (resId != 0) context.getString(resId) else "demo-database"
 
-        val app = if (FirebaseApp.getApps(context).isEmpty()) {
+        // Always use a dedicated app wired to the emulators: AtelierApp may already have started the
+        // default app (with on-disk persistence) from the build's Firebase config.
+        val existing = FirebaseApp.getApps(context).firstOrNull { it.name == TEST_APP_NAME }
+        val app = if (existing == null) {
             val newApp = FirebaseApp.initializeApp(
                 context,
                 FirebaseOptions.Builder()
                     .setApplicationId("com.aistudio.ateliercloset.vqxmpk")
                     .setProjectId(PROJECT_ID)
                     .setApiKey("fake-api-key-for-emulator")
-                    .build()
+                    .build(),
+                TEST_APP_NAME
             )
             val newFirestore = FirebaseFirestore.getInstance(newApp, databaseId)
             newFirestore.useEmulator(EMULATOR_HOST, FIRESTORE_PORT)
@@ -55,7 +59,7 @@ abstract class FirestoreEmulatorTestBase {
             newAuth.useEmulator(EMULATOR_HOST, AUTH_PORT)
             newApp
         } else {
-            FirebaseApp.getInstance()
+            existing
         }
 
         firestore = FirebaseFirestore.getInstance(app, databaseId)
@@ -92,6 +96,7 @@ abstract class FirestoreEmulatorTestBase {
         const val FIRESTORE_PORT = 8085
         const val AUTH_PORT = 9099
         const val PROJECT_ID = "demo-no-project"
+        const val TEST_APP_NAME = "rules-test"
         const val DEFAULT_PASSWORD = "password123"
         const val AUTH_TIMEOUT_MS = 5000L
     }

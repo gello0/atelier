@@ -50,6 +50,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -340,6 +342,16 @@ fun ClosetScreen(
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                             singleLine = true,
                             shape = RoundedCornerShape(16.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary,
+                                cursorColor = TextPrimary,
+                                focusedPlaceholderColor = TextSecondary,
+                                unfocusedPlaceholderColor = TextSecondary,
+                                focusedLeadingIconColor = TextSecondary,
+                                unfocusedLeadingIconColor = TextSecondary,
+                                unfocusedBorderColor = StudioTileBorder
+                            ),
                             modifier = Modifier.fillMaxWidth().testTag("closet_search_input")
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -347,13 +359,27 @@ fun ClosetScreen(
                                 selected = filterRainOnly,
                                 onClick = { filterRainOnly = !filterRainOnly },
                                 leadingIcon = { Icon(Icons.Default.Umbrella, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                                label = { Text("Water-resistant") }
+                                label = { Text("Water-resistant") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    labelColor = TextPrimary,
+                                    iconColor = TextSecondary,
+                                    selectedContainerColor = StudioFabPurple,
+                                    selectedLabelColor = TextPrimary,
+                                    selectedLeadingIconColor = TextPrimary
+                                ),
                             )
                             FilterChip(
                                 selected = filterFavoritesOnly,
                                 onClick = { filterFavoritesOnly = !filterFavoritesOnly },
                                 leadingIcon = { Icon(Icons.Default.Favorite, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                                label = { Text("Favourites") }
+                                label = { Text("Favourites") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    labelColor = TextPrimary,
+                                    iconColor = TextSecondary,
+                                    selectedContainerColor = StudioFabPurple,
+                                    selectedLabelColor = TextPrimary,
+                                    selectedLeadingIconColor = TextPrimary
+                                ),
                             )
                         }
                     }

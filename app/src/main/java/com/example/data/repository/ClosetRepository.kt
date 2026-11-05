@@ -42,7 +42,8 @@ class ClosetRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    private val auth get() = Firebase.auth
+    // The auth of the same Firebase app as the database (the default app in the app; a named app in tests).
+    private val auth get() = com.google.firebase.auth.FirebaseAuth.getInstance(db.app)
 
     private fun requireUserId(): String {
         return auth.currentUser?.uid

@@ -75,6 +75,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -147,6 +149,7 @@ fun GarmentVisualThumbnail(
     val sized = if (fillTile) modifier.fillMaxSize() else modifier.size(size)
     Box(
         modifier = sized
+            .semantics { contentDescription = item.name }
             .clip(shape)
             .background(StudioTileSurface)
             .border(1.dp, StudioTileBorder, shape),
