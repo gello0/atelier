@@ -162,14 +162,24 @@ object GarmentPhotoProcessor {
      */
     private fun stripBackgroundBleed(px: IntArray, alpha: FloatArray, w: Int, h: Int, garment: Int) {
         val n = w * h
-        // Far from the garment's own colour = not garment (e.g. a white sheet under black trousers).
-        // Same-colour backgrounds (white shirt on white sheet) are never touched by this.
-        // Only for dark garments on a lighter surface (e.g. black trousers on a white sheet). Light or
-        // mid-tone garments have shadows and folds that would be mistaken for background.
+        // Only for dark / mid-tone garments on a light surface (black trousers or a navy tee on a white
+        // sheet). Light garments can't be told apart from the sheet by colour.
         val garmentLum = luma(garment)
-        if (garmentLum > 90) return
-        fun looksLikeBackground(c: Int): Boolean = luma(c) > garmentLum + 90 && colorDist(c, garment) > 150f
+        if (garmentLum > 150) return
 
+        fun sheetLike(c: Int): Boolean {
+            val mx = maxOf((c shr 16) and 0xFF, (c shr 8) and 0xFF, c and 0xFF)
+            val mn = minOf((c shr 16) and 0xFF, (c shr 8) and 0xFF, c and 0xFF)
+            // Light, nearly colourless, and far from the garment's own colour.
+            return luma(c) > garmentLum + 90 && mx - mn < 50 && colorDist(c, garment) > 150f
+        }
+
+        var maskCount = 0
+        for (i in 0 until n) if (alpha[i] > 0.5f) maskCount++
+        if (maskCount == 0) return
+
+        // Pass 1: sheet that is connected to the edge of the whole photo (the mask swallowed the bed).
+        // White stripes or prints on the garment itself never reach the photo edge.
         val removed = BooleanArray(n)
         val queue = IntArray(n)
         var head = 0
@@ -178,9 +188,7 @@ object GarmentPhotoProcessor {
             if (alpha[i] <= 0.5f) continue
             val x = i % w
             val y = i / w
-            val touchesOutside = x == 0 || y == 0 || x == w - 1 || y == h - 1 ||
-                alpha[i - 1] <= 0.5f || alpha[i + 1] <= 0.5f || alpha[i - w] <= 0.5f || alpha[i + w] <= 0.5f
-            if (touchesOutside && looksLikeBackground(px[i])) {
+            if ((x == 0 || y == 0 || x == w - 1 || y == h - 1) && sheetLike(px[i])) {
                 removed[i] = true
                 queue[tail++] = i
             }
@@ -189,39 +197,42 @@ object GarmentPhotoProcessor {
             val i = queue[head++]
             val x = i % w
             val y = i / w
-            if (x > 0) visit(i - 1, alpha, removed, px, queue, tail, ::looksLikeBackground).also { if (it) tail++ }
-            if (x < w - 1) visit(i + 1, alpha, removed, px, queue, tail, ::looksLikeBackground).also { if (it) tail++ }
-            if (y > 0) visit(i - w, alpha, removed, px, queue, tail, ::looksLikeBackground).also { if (it) tail++ }
-            if (y < h - 1) visit(i + w, alpha, removed, px, queue, tail, ::looksLikeBackground).also { if (it) tail++ }
+            val next = intArrayOf(if (x > 0) i - 1 else -1, if (x < w - 1) i + 1 else -1, if (y > 0) i - w else -1, if (y < h - 1) i + w else -1)
+            for (j in next) {
+                if (j >= 0 && !removed[j] && alpha[j] > 0.5f && sheetLike(px[j])) {
+                    removed[j] = true
+                    queue[tail++] = j
+                }
+            }
         }
-        var maskCount = 0
-        for (i in 0 until n) if (alpha[i] > 0.5f) maskCount++
-        val removedCount = tail
-        if (maskCount == 0) return
-        val share = removedCount.toFloat() / maskCount
-        // Small edge areas are probably prints or highlights on the garment itself: keep them.
-        // Removing nearly everything means the colour guess was wrong: keep the mask.
-        if (share < 0.08f || share > 0.85f) {
-            Log.d(TAG, "Background bleed check: ${(share * 100).toInt()}% (left as is)")
-            return
+        val edgeShare = tail.toFloat() / maskCount
+        if (edgeShare in 0.15f..0.85f) {
+            for (i in 0 until n) if (removed[i]) alpha[i] = 0f
+            Log.d(TAG, "Removed ${(edgeShare * 100).toInt()}% background bleed from the mask")
         }
-        for (i in 0 until n) if (removed[i]) alpha[i] = 0f
-        Log.d(TAG, "Removed ${(share * 100).toInt()}% background bleed from the mask")
-    }
 
-    private inline fun visit(
-        j: Int,
-        alpha: FloatArray,
-        removed: BooleanArray,
-        px: IntArray,
-        queue: IntArray,
-        tail: Int,
-        isBackground: (Int) -> Boolean
-    ): Boolean {
-        if (removed[j] || alpha[j] <= 0.5f || !isBackground(px[j])) return false
-        removed[j] = true
-        queue[tail] = j
-        return true
+        // Pass 2: big sheet-coloured areas inside the mask, e.g. the gap between a sleeve and the body.
+        // Only thick areas count (an opening removes anything thinner than ~2x the radius), so white
+        // stripes and prints, which are thin, stay.
+        val sheet = BooleanArray(n) { alpha[it] > 0.5f && sheetLike(px[it]) }
+        val r = radius(w, 28)
+        val notSheet = BooleanArray(n) { !sheet[it] }
+        val eroded = dilate(notSheet, w, h, r).let { grown -> BooleanArray(n) { !grown[it] } }
+        val thick = dilate(eroded, w, h, r)
+        var thickCount = 0
+        for (i in 0 until n) if (thick[i] && sheet[i]) thickCount++
+        val share = thickCount.toFloat() / maskCount
+        if (share in 0.01f..0.4f) {
+            val reach = dilate(thick, w, h, radius(w, 8))
+            var gone = 0
+            for (i in 0 until n) {
+                if (sheet[i] && reach[i]) {
+                    alpha[i] = 0f
+                    gone++
+                }
+            }
+            Log.d(TAG, "Removed ${(gone * 100f / maskCount).toInt()}% sheet-coloured gap from the mask")
+        }
     }
 
     internal fun refineCutout(src: Bitmap, confidence: FloatArray, garment: Int? = null): Bitmap {

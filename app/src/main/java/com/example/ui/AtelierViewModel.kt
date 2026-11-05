@@ -483,15 +483,20 @@ class AtelierViewModel(
                 var updated = item
                 var workPhoto = photo
                 var rotated = false
+                // True when we could not tell which way up the photo is (Gemini busy). In that case no
+                // cutout is saved, because it would be made from a sideways photo and stay wrong.
+                var orientationUnknown = false
                 if (photo != null && (fillDetails || makeCutout)) {
-                    val turn = aiStylistService.detectUprightRotation(photo)
-                    if (turn != 0) {
+                    val turn = detectRotationPatiently(photo)
+                    if (turn == null) {
+                        orientationUnknown = true
+                    } else if (turn != 0) {
                         workPhoto = ImageUtils.rotateBitmapByDegrees(photo, turn.toFloat())
                         rotated = true
                     }
                 }
                 if (fillDetails && photo != null) {
-                    aiStylistService.analyzeGarmentPhoto(workPhoto ?: photo, labelPhoto, userTyped?.name.orEmpty()).fold(
+                    analyzePatiently(workPhoto ?: photo, labelPhoto, userTyped?.name.orEmpty()).fold(
                         onSuccess = { a ->
                             val typed = userTyped
                             updated = updated.copy(
@@ -532,7 +537,9 @@ class AtelierViewModel(
                     }
                 }
 
-                if (makeCutout || rotated || (photo == null && updated.imageBase64.isBlank())) {
+                if (orientationUnknown && (makeCutout || fillDetails)) {
+                    showBanner("Gemini is busy right now, so ${displayName(item)} isn't set up yet. Tap Fill in to try again.")
+                } else if (makeCutout || rotated || (photo == null && updated.imageBase64.isBlank())) {
                     val cutout = GarmentPhotoProcessor.makeCutoutBase64(
                         photo = workPhoto,
                         item = updated,
@@ -559,6 +566,27 @@ class AtelierViewModel(
                 jobFinished()
             }
         }
+    }
+
+    /** Asks Gemini which way up the photo is, retrying a few times with pauses while it is busy. */
+    private suspend fun detectRotationPatiently(photo: Bitmap): Int? {
+        for (waitMs in longArrayOf(0L, 8_000L, 20_000L)) {
+            if (waitMs > 0) kotlinx.coroutines.delay(waitMs)
+            aiStylistService.detectUprightRotation(photo)?.let { return it }
+        }
+        return null
+    }
+
+    private suspend fun analyzePatiently(photo: Bitmap, label: Bitmap?, hint: String): Result<GarmentAiAnalysis> {
+        var last: Result<GarmentAiAnalysis> = aiStylistService.analyzeGarmentPhoto(photo, label, hint)
+        for (waitMs in longArrayOf(8_000L, 20_000L)) {
+            if (last.isSuccess) return last
+            val msg = last.exceptionOrNull()?.localizedMessage.orEmpty()
+            if ("API key" in msg || "refused" in msg) return last // a wrong key won't fix itself
+            kotlinx.coroutines.delay(waitMs)
+            last = aiStylistService.analyzeGarmentPhoto(photo, label, hint)
+        }
+        return last
     }
 
     private fun displayName(item: ClosetItem): String =

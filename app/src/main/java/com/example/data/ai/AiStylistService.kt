@@ -244,9 +244,9 @@ class AiStylistService(private val settings: AppSettings) {
     /**
      * Degrees to rotate [photo] clockwise so the item is upright (0/90/180/270). Shows the model
      * the photo in all four orientations as labelled panels and asks which one is upright, which
-     * is far more reliable than asking it to reason about rotation directly. Returns 0 on failure.
+     * is far more reliable than asking it to reason about rotation directly. Returns null when it could not be determined (e.g. Gemini busy).
      */
-    suspend fun detectUprightRotation(photo: Bitmap): Int {
+    suspend fun detectUprightRotation(photo: Bitmap): Int? {
         return try {
             val grid = ImageUtils.orientationGrid(photo)
             val prompt = "These 4 panels (A, B, C, D) show the SAME clothing photo rotated in different directions. " +
@@ -268,7 +268,7 @@ class AiStylistService(private val settings: AppSettings) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Orientation check failed: ${e.message}")
-            0
+            null
         }
     }
 
