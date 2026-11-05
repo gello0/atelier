@@ -509,7 +509,13 @@ class AtelierViewModel(
                                 notes = typed?.notes?.trim()?.takeIf { it.isNotBlank() } ?: a.notes
                             )
                         },
-                        onFailure = { showBanner("Couldn't fill in details for ${displayName(item)}: ${it.localizedMessage}") }
+                        onFailure = {
+                            val busy = it.localizedMessage.orEmpty().let { m -> "503" in m || "high demand" in m || "quota" in m.lowercase() }
+                            showBanner(
+                                if (busy) "Gemini is busy right now, so ${displayName(item)} has no details yet. Tap Fill in to try again."
+                                else "Couldn't fill in details for ${displayName(item)}: ${it.localizedMessage}"
+                            )
+                        }
                     )
                 } else if (fillDetails && labelPhoto != null) {
                     aiStylistService.scanMaterialLabel(labelPhoto).onSuccess { scan ->

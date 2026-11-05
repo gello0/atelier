@@ -61,6 +61,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -146,25 +152,70 @@ fun GarmentVisualThumbnail(
     }
     val shape = RoundedCornerShape(cornerRadius)
 
+    // "Inventory card" look: a spotlight behind the item tinted with its own colour, a soft glow around
+    // it, a shadow on the floor and a rim in the item's colour. The spotlight is lighter than the
+    // tile so dark clothes (black trousers) still stand out.
+    val spotlight = remember(swatchColor) { lerp(Color(0xFF303949), swatchColor, 0.22f) }
+    val glow = remember(swatchColor) { lerp(swatchColor, Color.White, 0.5f) }
+    val rim = remember(swatchColor) { lerp(StudioTileBorder, glow, 0.55f) }
+    val cardBrush = remember(spotlight) {
+        Brush.radialGradient(
+            0f to spotlight,
+            0.65f to lerp(spotlight, StudioTileSurface, 0.65f),
+            1f to StudioTileSurface
+        )
+    }
+
+    // Raw (non-cutout) photos keep the plain tile; cutouts and drawn icons get the card look.
+    val cardLook = decodedBitmap == null || isCutout
     val sized = if (fillTile) modifier.fillMaxSize() else modifier.size(size)
     Box(
         modifier = sized
             .semantics { contentDescription = item.name }
             .clip(shape)
-            .background(StudioTileSurface)
-            .border(1.dp, StudioTileBorder, shape),
+            .background(if (cardLook) cardBrush else Brush.linearGradient(listOf(StudioTileSurface, StudioTileSurface)))
+            .border(1.dp, if (cardLook) rim else StudioTileBorder, shape),
         contentAlignment = Alignment.Center
     ) {
         when {
-            decodedBitmap != null && isCutout -> Image(
-                bitmap = decodedBitmap,
-                contentDescription = item.name,
-                filterQuality = FilterQuality.High,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(if (fillTile) 10.dp else 6.dp),
-                contentScale = ContentScale.Fit
-            )
+            decodedBitmap != null && isCutout -> {
+                val pad = if (fillTile) 10.dp else 6.dp
+                // Floor shadow.
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = this.size.width
+                    val h = this.size.height
+                    drawOval(
+                        brush = Brush.radialGradient(
+                            colors = listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent),
+                            center = Offset(w / 2f, h * 0.86f),
+                            radius = w * 0.32f
+                        ),
+                        topLeft = Offset(w * 0.16f, h * 0.80f),
+                        size = Size(w * 0.68f, h * 0.13f)
+                    )
+                }
+                // Soft glow in the item's colour (blur needs Android 12+; older phones just skip it).
+                Image(
+                    bitmap = decodedBitmap,
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(glow, BlendMode.SrcIn),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(pad)
+                        .alpha(0.38f)
+                        .blur(9.dp, BlurredEdgeTreatment.Unbounded),
+                    contentScale = ContentScale.Fit
+                )
+                Image(
+                    bitmap = decodedBitmap,
+                    contentDescription = item.name,
+                    filterQuality = FilterQuality.High,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(pad),
+                    contentScale = ContentScale.Fit
+                )
+            }
             decodedBitmap != null -> Image(
                 bitmap = decodedBitmap,
                 contentDescription = item.name,
